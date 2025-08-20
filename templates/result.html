@@ -1,0 +1,27 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DataBotti – Analysis Result</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Analysis Result for {{ summary.filename }}</h1>
+
+    <h2>Dataset Overview</h2>
+    <ul>
+        <li><strong>Rows and Columns:</strong> {{ summary.shape[0] }} rows, {{ summary.shape[1] }} columns</li>
+        <li><strong>Columns:</strong> {{ summary.columns|join(', ') }}</li>
+    </ul>
+
+    <h2>Sample Data (first 10 rows)</h2>
+    {{ summary.head|safe }}
+
+    <h2>Descriptive Statistics</h2>
+    {{ summary.description|safe }}
+
+    <p><a href="{{ url_for('index') }}">Upload another file</a></p>
+</body>
+</html>
