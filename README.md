@@ -1,68 +1,68 @@
 # DataBotti
 
-DataBotti ist ein Data-Analyzing-Tool mit AI-Unterstützung.  
-Aktueller Status: **Pre-MVP / Work in Progress** – grundlegende Funktionen sind vorhanden, die KI-Funktionen werden aktuell vorbereitet.  
+DataBotti is a data analyzing tool with AI support.  
+Current status: **Pre-MVP / Work in Progress** – basic functions are available, AI features are currently being prepared.  
 
 ---
 
-## Features (bisher)
-- 📊 Datenbank-Anbindung (MariaDB via Docker oder lokal mit SQL-Skript)  
-- 🔍 Erste Standardfunktionen zur Datenanalyse  
-- 🤖 Vorbereitung für AI-gestützte Analysen (OpenAI API)  
+## Features (so far)
+- 📊 Database connection (MariaDB via Docker or locally with SQL script)  
+- 🔍 Initial standard functions for data analysis  
+- 🤖 Preparation for AI-supported analyses (OpenAI API)  
 
 ---
 
 ## Setup
 
-### 1. Repository klonen
+### 1. Clone the repository
 ```
 git clone https://github.com/dein-user/data-botti.git
 cd data-botti
 ```
 
-### 2. Umgebungsvariablen konfigurieren
-Kopiere die Beispieldatei:
+### 2. Configure environment variables
+Copy the example file:
 ```
 cp .env-example .env
 ```
-Bearbeite `.env` und trage deine eigenen Werte ein (DB-User, Passwörter, API-Key).
+Edit `.env` and enter your own values (DB user, passwords, API key).
 
-### 3. Datenbank vorbereiten
+### 3. Prepare the database
 
-**a) Mit Docker (empfohlen)**  
-- Stelle sicher, dass dein `create_database.sql` im Verzeichnis **`docker/init/`** liegt.  
-- Beim ersten Start des Containers wird das Skript automatisch ausgeführt und die Datenbank erstellt.  
-- Starte die Container:
+**a) With Docker (recommended)**  
+- The file `create_database.sql` must be located in **`docker/mysql/init/`** (relative to the project root). This folder is automatically mounted into the database container, so the script runs on first startup.  
+- On the first start of the container, the script is executed automatically and the database is created.  
+- Start the containers:
 ```
 docker compose -f docker/docker-compose.yml up --build
 ```
 
-**b) Ohne Docker (lokal)**  
-- Installiere MariaDB/MySQL lokal.  
-- Führe das Skript manuell aus:  
+**b) Without Docker (local)**  
+- Install MariaDB/MySQL locally.  
+- Run the script manually:  
 ```
-mysql -u <user> -p < databotti < docker/init/create_database.sql
+mysql -u <user> -p < databotti < app/sql-scripts/create_database.sql
 ```
 
-### 4. Backend starten
-- Mit Docker läuft das Backend direkt als Service.  
-- Alternativ lokal starten (z. B. in PyCharm):
+### 4. Start the backend
+- With Docker, the backend runs directly as a service.  
+- Alternatively, start locally (e.g., in PyCharm):
 ```
 python app.py
 ```
 
 ---
 
-## PyCharm-Workflow (lokal entwickeln)
-Für die Arbeit in PyCharm gibt es ein Override-File, das nur die DB im Container laufen lässt:
+## PyCharm workflow (local development)
+For working in PyCharm there is an override file that only runs the DB in the container:
 ```
 docker compose -f docker/docker-compose.yml -f docker/docker-compose.pycharm.yml up -d
 ```
-Dann kannst du das Backend lokal in PyCharm starten, während die Datenbank im Container läuft.
+Then you can start the backend locally in PyCharm while the database runs in the container.
 
 ---
 
 ## Status & Roadmap
-- ✅ Basisfunktionen laufen  
-- 🔄 Integration der KI-Funktionen (OpenAI API)  
-- ⏳ Vorbereitung von Tests und erster Release als MVP  
+- ✅ Basic functions running  
+- 🔄 Integration of AI features (OpenAI API)  
+- ⏳ Preparation of tests and first release as MVP
