@@ -1,0 +1,73 @@
+version: "3.8"
+
+# Compose-Setup für DataBotti – produktionsnah, aber einfach zu starten
+# Hinweise:
+# - Keine Secrets hier hartkodieren. Werte kommen aus `.env`.
+# - Vorlage: `.env-example` → kopieren nach `.env` und ausfüllen.
+# - SQL-Init-Skripte: `./sql_scripts` wird in den Container gemountet und beim ersten Start ausgeführt.
+
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: databotti-db
+    restart: unless-stopped
+    env_file:
+      - .env  # lädt z. B. MARIADB_ROOT_PASSWORD, MARIADB_DATABASE, MARIADB_USER, MARIADB_PASSWORD
+    environment:
+      # Fallbacks, falls Variablen in `.env` fehlen – für echte Deployments überschreiben
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpw}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-databotti}
+      MARIADB_USER: ${MARIADB_USER:-michael}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-test123}
+    ports:
+      - "${DB_PORT:-3306}:3306"  # Host-Port konfigurierbar via DB_PORT
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./sql_scripts:/docker-entrypoint-initdb.d:ro  # erwartet z. B. create_database.sql
+    networks:
+      - databotti-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MARIADB_ROOT_PASSWORD:-rootpw}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    # HINWEIS zu Pfaden:
+    # Wenn dieses Compose-File IM Projekt-Root liegt und der Code in ./app, dann:
+    #   context: ./app
+    #   dockerfile: ./docker/backend/Dockerfile
+    # Deine bisherigen relativen Pfade (../app) lassen wir hier als Standard bei,
+    # falls dein Compose-File in einem Unterordner (z. B. ./docker) liegt. Bitte ggf. anpassen.
+    build:
+      context: ../app
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: databotti-backend
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    env_file:
+      - .env  # lädt u. a. OPENAI_API_KEY sowie DB-Zugänge, falls die App sie benötigt
+    environment:
+      # Überschreibbare Defaults
+      FLASK_ENV: ${FLASK_ENV:-development}
+      DB_HOST: ${DB_HOST:-mariadb}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${MARIADB_DATABASE:-databotti}
+      DB_USER: ${MARIADB_USER:-michael}
+      DB_PASS: ${MARIADB_PASSWORD:-test123}
+      APP_PORT: ${APP_PORT:-5001}
+    volumes:
+      - ../app:/app
+    working_dir: /app
+    command: python app.py  # sollte APP_PORT berücksichtigen (z. B. host=0.0.0.0, port=APP_PORT)
+    networks:
+      - databotti-net
+    ports:
+      - "${APP_PORT:-5001}:${APP_PORT:-5001}"
+
+volumes:
+  mariadb_data:
+
+networks:
+  databotti-net:

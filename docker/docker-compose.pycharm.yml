@@ -1,0 +1,18 @@
+# Override-Datei für lokale Entwicklung mit PyCharm
+# Zweck: Backend lokal (auf dem Host via PyCharm) laufen lassen, während die DB im Container liegt.
+# Nutzung: docker compose -f docker-compose.yml -f docker-compose.pycharm.yml up -d
+
+services:
+  backend:
+    # Verhindert, dass Compose das Backend baut/port-mapped, wenn du es in PyCharm lokal startest.
+    build: null            # build aus Basisdatei deaktivieren
+    image: docker-backend  # optionaler Platzhalter – wird hier nicht verwendet
+    command: null          # keinen Container-Prozess starten
+    ports: []              # keine Ports veröffentlichen, um Konflikte zu vermeiden
+    depends_on:
+      - mariadb            # DB soll laufen, Backend startest du lokal
+
+  mariadb:
+    # Optional: abweichenden Host-Port für parallele lokale DBs setzen
+    ports:
+      - "${DB_PORT:-3306}:3306"
