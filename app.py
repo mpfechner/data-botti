@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import matplotlib.pyplot as plt
-from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns
+from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -27,8 +27,15 @@ load_dotenv()
 
 
 # SQLAlchemy Engine erstellen
+user = os.getenv("MYSQL_USER")
+pwd  = os.getenv("MYSQL_PASSWORD")
+db   = os.getenv("MYSQL_DATABASE")
+host = os.getenv("MYSQL_HOST", "127.0.0.1")
+port = os.getenv("MYSQL_PORT", "3306")
+
 engine = create_engine(
-    f"mysql+pymysql://{os.getenv('MYSQL_USER')}:{os.getenv('MYSQL_PASSWORD')}@db:3306/{os.getenv('MYSQL_DATABASE')}"
+    f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}",
+    pool_pre_ping=True,         # prüft Connection vor Nutzung → verhindert 2013-Fehler
 )
 
 
@@ -67,8 +74,8 @@ def index():
         }
         dataset_id = insert_dataset_and_file(
             engine,
-            user_id=1,                 # TODO: echten User verwenden, sobald vorhanden
-            name=file.filename,
+            user_id=get_or_create_default_user(engine),  # TODO: echten User verwenden
+            filename=file.filename,  # <-- vorher: name=...
             file_info=file_info
         )
 
@@ -80,11 +87,11 @@ def index():
 
 @app.route('/analyze/dataset/<int:dataset_id>')
 def analyze_dataset(dataset_id):
-    # Metadaten zur archivierten Datei holen
+    # Metadaten zur archivierten Datei holen (inkl. original_name & file_hash)
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT file_path, encoding, delimiter
+                SELECT file_path, encoding, delimiter, original_name, file_hash
                 FROM dataset_files
                 WHERE dataset_id = :id
             """),
@@ -98,21 +105,37 @@ def analyze_dataset(dataset_id):
     encoding = row["encoding"] or "utf-8"
     delimiter = row["delimiter"] or ","
 
-    # CSV aus dem .gz lesen und analysieren
-    with gzip.open(file_path, "rt", encoding=encoding, newline="") as f:
-        df = pd.read_csv(f, delimiter=delimiter)
+    # CSV robust einlesen
+    try:
+        df, used_encoding, used_delimiter = load_csv_resilient(
+            file_path,
+            preferred_encoding=encoding,
+            preferred_delimiter=delimiter,
+        )
+    except Exception as e:
+        return f"Datei konnte nicht robust eingelesen werden: {e}", 400
+
+    # Generische Auto-Insights
+    insights = compute_generic_insights(df)
 
     # Spaltenanalyse berechnen und in DB schreiben
     analyze_and_store_columns(engine, dataset_id, df)
 
     summary = {
-        "filename": os.path.basename(file_path),
+        # Anzeige: Originaldatei + Zusatz
+        "filename": row["original_name"],                 # sichtbarer Name
+        "stored_filename": os.path.basename(file_path),   # interner (hash) Dateiname
+        "file_hash": row["file_hash"],
+
         "shape": df.shape,
+        "encoding_used": used_encoding,
+        "delimiter_used": used_delimiter,
         "columns": df.columns.tolist(),
         "head": df.head(10).to_html(classes="table table-striped", border=0),
         "description": df.describe(include="all").to_html(classes="table table-bordered", border=0),
+        "insights": insights,
     }
-    # Spalteninfos aus der DB abrufen
+
     with engine.begin() as conn:
         columns = conn.execute(
             text("""

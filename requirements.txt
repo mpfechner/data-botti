@@ -23,3 +23,4 @@ sqlalchemy
 mysql-connector-python
 python-dotenv
 pandas-stubs==2.3.0.250703
+pymysql
