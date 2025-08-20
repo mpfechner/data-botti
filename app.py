@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import matplotlib.pyplot as plt
-from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file
+from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -102,6 +102,9 @@ def analyze_dataset(dataset_id):
     with gzip.open(file_path, "rt", encoding=encoding, newline="") as f:
         df = pd.read_csv(f, delimiter=delimiter)
 
+    # Spaltenanalyse berechnen und in DB schreiben
+    analyze_and_store_columns(engine, dataset_id, df)
+
     summary = {
         "filename": os.path.basename(file_path),
         "shape": df.shape,
@@ -109,7 +112,19 @@ def analyze_dataset(dataset_id):
         "head": df.head(10).to_html(classes="table table-striped", border=0),
         "description": df.describe(include="all").to_html(classes="table table-bordered", border=0),
     }
-    return render_template("result.html", summary=summary)
+    # Spalteninfos aus der DB abrufen
+    with engine.begin() as conn:
+        columns = conn.execute(
+            text("""
+                 SELECT ordinal, name, dtype, is_nullable, distinct_count, min_val, max_val
+                 FROM dataset_columns
+                 WHERE dataset_id = :id
+                 ORDER BY ordinal
+                 """),
+            {"id": dataset_id}
+        ).mappings().all()
+
+    return render_template("result.html", summary=summary, columns=columns)
 
 
 if __name__ == '__main__':
