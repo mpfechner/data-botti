@@ -1,5 +1,6 @@
 import hashlib, gzip, io, os
 from sqlalchemy import text
+import pandas as pd
 
 def sha256_bytesio(bio: io.BytesIO) -> str:
     bio.seek(0)
@@ -37,3 +38,43 @@ def insert_dataset_and_file(db_engine, user_id: int, name: str, file_info: dict)
             {"dataset_id": dataset_id, **file_info}
         )
     return dataset_id
+
+
+def analyze_and_store_columns(db_engine, dataset_id: int, df):
+    with db_engine.begin() as conn:
+        # idempotent: alte Analyse (falls vorhanden) löschen
+        conn.execute(text("DELETE FROM dataset_columns WHERE dataset_id = :id"), {"id": dataset_id})
+
+        for idx, col in enumerate(df.columns):
+            series = df[col]
+            dtype = str(series.dtype)
+            is_nullable = 1 if series.isnull().any() else 0
+            distinct_count = int(series.nunique(dropna=True))
+
+            min_val = None
+            max_val = None
+            if pd.api.types.is_numeric_dtype(series) or pd.api.types.is_datetime64_any_dtype(series):
+                try:
+                    min_val = str(series.min(skipna=True))
+                    max_val = str(series.max(skipna=True))
+                except Exception:
+                    pass
+
+            conn.execute(
+                text("""
+                    INSERT INTO dataset_columns
+                      (dataset_id, ordinal, name, dtype, is_nullable, distinct_count, min_val, max_val)
+                    VALUES
+                      (:dataset_id, :ordinal, :name, :dtype, :is_nullable, :distinct_count, :min_val, :max_val)
+                """),
+                {
+                    "dataset_id": dataset_id,
+                    "ordinal": idx,
+                    "name": col,
+                    "dtype": dtype,
+                    "is_nullable": is_nullable,
+                    "distinct_count": distinct_count,
+                    "min_val": min_val,
+                    "max_val": max_val,
+                },
+            )
