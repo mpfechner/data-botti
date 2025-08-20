@@ -35,27 +35,81 @@ engine = create_engine(
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        file = request.files['file']
-        if file and file.filename.endswith('.csv'):
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-            file.save(filepath)
-            return redirect(url_for('analyze', filename=file.filename))
+        file = request.files.get('file')
+        if not file or file.filename == '':
+            return render_template('index.html', error="Bitte eine CSV-Datei auswählen.")
+        if not file.filename.lower().endswith('.csv'):
+            return render_template('index.html', error="Nur .csv-Dateien sind erlaubt.")
+
+        # CSV in Memory lesen
+        buf = io.BytesIO(file.read())
+        size_bytes = buf.getbuffer().nbytes
+
+        # Hash berechnen
+        hexhash = sha256_bytesio(buf)
+
+        # Vorerst feste Defaults (Auto-Detect machen wir später)
+        encoding = "utf-8"
+        delimiter = ","
+
+        # Archiv speichern: data/<hash>.csv.gz
+        os.makedirs("data", exist_ok=True)
+        file_path = save_gzip_to_data(buf, hexhash, data_dir="data")
+
+        # DB: datasets + dataset_files
+        file_info = {
+            "original_name": file.filename,
+            "size_bytes": size_bytes,
+            "file_hash": hexhash,
+            "encoding": encoding,
+            "delimiter": delimiter,
+            "file_path": file_path
+        }
+        dataset_id = insert_dataset_and_file(
+            engine,
+            user_id=1,                 # TODO: echten User verwenden, sobald vorhanden
+            name=file.filename,
+            file_info=file_info
+        )
+
+        # Weiter zur Analyse über dataset_id
+        return redirect(url_for('analyze_dataset', dataset_id=dataset_id))
+
     return render_template('index.html')
 
 
-@app.route('/analyze/<filename>')
-def analyze(filename):
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    df = pd.read_csv(filepath)
+@app.route('/analyze/dataset/<int:dataset_id>')
+def analyze_dataset(dataset_id):
+    # Metadaten zur archivierten Datei holen
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT file_path, encoding, delimiter
+                FROM dataset_files
+                WHERE dataset_id = :id
+            """),
+            {"id": dataset_id}
+        ).mappings().first()
+
+    if not row:
+        return f"Dataset {dataset_id} nicht gefunden.", 404
+
+    file_path = row["file_path"]
+    encoding = row["encoding"] or "utf-8"
+    delimiter = row["delimiter"] or ","
+
+    # CSV aus dem .gz lesen und analysieren
+    with gzip.open(file_path, "rt", encoding=encoding, newline="") as f:
+        df = pd.read_csv(f, delimiter=delimiter)
 
     summary = {
-        'filename': filename,
-        'shape': df.shape,
-        'columns': df.columns.tolist(),
-        'head': df.head(10).to_html(classes='table table-striped', border=0),
-        'description': df.describe(include='all').to_html(classes='table table-bordered', border=0)
+        "filename": os.path.basename(file_path),
+        "shape": df.shape,
+        "columns": df.columns.tolist(),
+        "head": df.head(10).to_html(classes="table table-striped", border=0),
+        "description": df.describe(include="all").to_html(classes="table table-bordered", border=0),
     }
-    return render_template('result.html', summary=summary)
+    return render_template("result.html", summary=summary)
 
 
 if __name__ == '__main__':
