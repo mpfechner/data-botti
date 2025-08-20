@@ -115,6 +115,14 @@ def analyze_dataset(dataset_id):
     except Exception as e:
         return f"Datei konnte nicht robust eingelesen werden: {e}", 400
 
+    # Hinweise/Warnungen für den User
+    warnings = []
+    if hasattr(df, "attrs") and df.attrs.get("header_detected") is False:
+        warnings.append(
+            "Kein Header erkannt – Spalten wurden generisch benannt (col_0, col_1, …). Einige Auswertungen sind ggf. eingeschränkt.")
+    if used_delimiter == ";":
+        warnings.append("Semikolon als Trennzeichen erkannt (Excel-CSV).")
+
     # Generische Auto-Insights
     insights = compute_generic_insights(df)
 
@@ -126,7 +134,7 @@ def analyze_dataset(dataset_id):
         "filename": row["original_name"],                 # sichtbarer Name
         "stored_filename": os.path.basename(file_path),   # interner (hash) Dateiname
         "file_hash": row["file_hash"],
-
+        "warnings": warnings,
         "shape": df.shape,
         "encoding_used": used_encoding,
         "delimiter_used": used_delimiter,

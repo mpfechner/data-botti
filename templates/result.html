@@ -13,6 +13,15 @@
       {% if summary.file_hash %} &middot; Hash: <code>{{ summary.file_hash }}</code>{% endif %}
     </p>
     {% endif %}
+    {% if summary.warnings and summary.warnings|length > 0 %}
+  <div class="alert alert-warning">
+    <ul style="margin-bottom:0;">
+      {% for w in summary.warnings %}
+        <li>{{ w }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
 
     <h2>Dataset Overview</h2>
     <ul>
