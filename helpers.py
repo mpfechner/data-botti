@@ -1,6 +1,12 @@
 import hashlib, gzip, io, os
 from sqlalchemy import text
 import pandas as pd
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message="Could not infer format, so each element will be parsed individually",
+    category=UserWarning
+)
 
 def sha256_bytesio(bio: io.BytesIO) -> str:
     bio.seek(0)

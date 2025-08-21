@@ -14,6 +14,7 @@
     </p>
     {% endif %}
     {% if summary.warnings and summary.warnings|length > 0 %}
+        <p class="info-box">Encoding: <code>UTF-8</code> · Trennzeichen: <code>;</code></p>
   <div class="alert alert-warning">
     <ul style="margin-bottom:0;">
       {% for w in summary.warnings %}
