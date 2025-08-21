@@ -15,6 +15,7 @@ h1 {
 }
 
 h2 {
+    text-align: center;
     color: #0a9396;
     border-bottom: 2px solid #94d2bd;
     padding-bottom: 0.5rem;
@@ -107,3 +108,70 @@ a:hover {
     font-weight: bold;
     margin-right: 0.25rem;
 }
+
+.header {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+}
+
+.logo-container img.logo {
+    height: 60px; /* Logo kleiner */
+    margin-right: 10px;
+}
+
+.logo-container img.logo-text {
+    height: 30px; /* Schriftzug anpassen */
+}
+
+.main-content {
+    max-width: 720px;
+    margin: 0 auto;       /* zentriert den Block */
+    text-align: center;   /* zentriert Überschrift & Text */
+}
+.main-content p {
+    margin: 0.5rem 0 1rem;
+}
+.main-content form {
+    display: inline-block; /* zentriert das Formular unter dem Text */
+    margin-top: 10px;
+}
+
+
+/* --- File input styled like our primary button --- */
+.upload-form { text-align: center; }
+.upload-form > div { margin: 0.5rem 0; }
+
+/* Base font for the input; the clickable button inside is styled below */
+.styled-input { font-size: 1rem; }
+
+/* Standards-compliant selector for the inner button */
+.styled-input::file-selector-button {
+    background-color: #0a9396;
+    color: #fff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    border-radius: 4px;
+    margin-right: 0.75rem; /* spacing before filename */
+}
+
+/* WebKit fallback (Safari/older Chrome) */
+.styled-input::-webkit-file-upload-button {
+    background-color: #0a9396;
+    color: #fff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    border-radius: 4px;
+    margin-right: 0.75rem;
+}
+
+/* Hover state to match our normal button */
+.styled-input::file-selector-button:hover,
+.styled-input::-webkit-file-upload-button:hover {
+    background-color: #007f83;
+}
+
+/* Ensure the submit button sits on its own line and centers */
+.upload-form button { display: inline-block; margin-top: 0.25rem; }

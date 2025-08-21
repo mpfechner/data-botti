@@ -6,6 +6,12 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <div class="header">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='Logo.png') }}" alt="DataBotti Logo" class="logo">
+            <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti Name" class="logo-text">
+        </div>
+    </div>
     <h1>Analysis Result for {{ summary.filename }}</h1>
     {% if summary.stored_filename or summary.file_hash %}
     <p style="font-size:0.9em;color:#666;margin-top:-10px;">

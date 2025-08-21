@@ -1,19 +1,32 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>DataBotti – CSV Analyzer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='Logo.png') }}">
 </head>
 <body>
-    <h1>Welcome to DataBotti</h1>
-    <p>Please upload a CSV file for analysis:</p>
+    <header class="header">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='Logo.png') }}" alt="Logo" class="logo">
+            <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti" class="logo-text">
+        </div>
+    </header>
+    <div class="main-content">
+        <div class="welcome-section">
+            <h1>Welcome to DataBotti</h1>
+            <p>Please upload a CSV file for analysis:</p>
+        </div>
 
-    <form action="/" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".csv" required>
-        <button type="submit">Upload and Analyze</button>
-    </form>
+        <form action="/" method="post" enctype="multipart/form-data" class="upload-form">
+            <div>
+                <input type="file" name="file" accept=".csv" required class="styled-input">
+            </div>
+            <div>
+                <button type="submit">Upload and Analyze</button>
+            </div>
+        </form>
+    </div>
 </body>
 </html>
