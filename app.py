@@ -125,6 +125,8 @@ def analyze_dataset(dataset_id):
 
     # Generische Auto-Insights
     insights = compute_generic_insights(df)
+    if isinstance(insights, dict) and insights.get("warnings"):
+        warnings.extend(insights["warnings"])
 
     # Spaltenanalyse berechnen und in DB schreiben
     analyze_and_store_columns(engine, dataset_id, df)

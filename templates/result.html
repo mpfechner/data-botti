@@ -13,8 +13,21 @@
       {% if summary.file_hash %} &middot; Hash: <code>{{ summary.file_hash }}</code>{% endif %}
     </p>
     {% endif %}
+    {% set d = summary.delimiter_used %}
+{% if d == '\t' %}
+  {% set d_label = 'Tabulator (\\t)' %}
+{% elif d == ';' %}
+  {% set d_label = 'Semikolon (;)' %}
+{% elif d == '|' %}
+  {% set d_label = 'Pipe (|)' %}
+{% else %}
+  {% set d_label = d %}
+{% endif %}
+<p class="info-box">
+  Encoding: <code>{{ summary.encoding_used or 'unbekannt' }}</code>
+  · Trennzeichen: <code>{{ d_label or 'unbekannt' }}</code>
+</p>
     {% if summary.warnings and summary.warnings|length > 0 %}
-        <p class="info-box">Encoding: <code>UTF-8</code> · Trennzeichen: <code>;</code></p>
   <div class="alert alert-warning">
     <ul style="margin-bottom:0;">
       {% for w in summary.warnings %}

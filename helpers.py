@@ -1,12 +1,90 @@
 import hashlib, gzip, io, os
 from sqlalchemy import text
 import pandas as pd
-import warnings
-warnings.filterwarnings(
-    "ignore",
-    message="Could not infer format, so each element will be parsed individually",
-    category=UserWarning
-)
+import re
+
+def _parse_datetime_series(series: pd.Series) -> pd.Series:
+    """Parse a Series to datetime robustly:
+    1) If already datetime dtype, coerce directly.
+    2) Try infer_datetime_format on the full series.
+    3) Try a list of common explicit formats and pick the best (>50% parsable).
+    4) Fallback to a generic coerce; caller decides on usefulness via NaT ratio.
+    """
+    s = series
+    # 1) Already datetime?
+    try:
+        if pd.api.types.is_datetime64_any_dtype(s):
+            return pd.to_datetime(s, errors="coerce")
+    except Exception:
+        pass
+
+    # 2) Try explicit formats and choose best
+    formats = [
+        "%Y-%m-%d",
+        "%d.%m.%Y",
+        "%d/%m/%Y",
+        "%m/%d/%Y",
+        "%Y/%m/%d",
+        "%d-%m-%Y",
+        "%m-%d-%Y",
+        "%Y.%m.%d",
+        "%d.%m.%y",
+        "%m/%d/%y",
+        "%Y%m%d",
+    ]
+    best = None
+    best_score = 0.0
+    for fmt in formats:
+        try:
+            r = pd.to_datetime(s, format=fmt, errors="coerce")
+            score = r.notna().mean()
+            if score > best_score:
+                best = r
+                best_score = score
+                if score >= 0.8:  # good enough, stop early
+                    break
+        except Exception:
+            continue
+    if best is not None and best_score >= 0.5:
+        return best
+
+    # 4) Generic fallback
+    # 4) Kein konsistentes Format → nicht als Datum behandeln
+    return pd.Series([pd.NaT] * len(s), index=s.index)
+
+def _looks_like_datetime(series: pd.Series) -> bool:
+    """
+    Schnellheuristik: Nur Spalten prüfen, die wahrscheinlich Datumswerte enthalten.
+    - Numerisch: nur dann True, wenn sie wie Unix-Timestamps aussehen (10–13-stellig).
+    - Strings: Anteil von "datumstypischen" Tokens (Ziffern + Trenner oder Monatsnamen) >= 0.5.
+    """
+    s = series.dropna()
+    if s.empty:
+        return False
+
+    # Numerisch: mögliche Unix-Timestamps (Sekunden/Millis)
+    if pd.api.types.is_numeric_dtype(s):
+        # 10-stellig (Sekunden) oder 13-stellig (Millis) ohne Dezimalanteil
+        as_int = pd.to_numeric(s, errors="coerce").dropna().astype("int64", errors="ignore")
+        if as_int.empty:
+            return False
+        # Heuristik: mind. 50% Werte im plausiblen Bereich
+        sec_like = ((as_int >= 946684800) & (as_int <= 4102444800)).mean()  # 2000–2100 (Sekunden)
+        ms_like  = ((as_int >= 946684800000) & (as_int <= 4102444800000)).mean()  # 2000–2100 (Millis)
+        return max(sec_like, ms_like) >= 0.5
+
+    # Strings: Muster prüfen
+    sample = s.astype(str).head(200)
+    date_sep_re = re.compile(r"\b\d{1,4}[-./]\d{1,2}[-./]\d{1,4}\b")
+    month_names = ("jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec",
+                   "januar","februar","märz","maerz","april","mai","juni","juli","august",
+                   "september","oktober","november","dezember")
+    def looks_token(x: str) -> bool:
+        x_low = x.lower()
+        return bool(date_sep_re.search(x_low)) or any(m in x_low for m in month_names)
+
+    share = sample.apply(looks_token).mean()
+    return share >= 0.5
 
 def sha256_bytesio(bio: io.BytesIO) -> str:
     bio.seek(0)
@@ -309,22 +387,26 @@ def compute_generic_insights(df: pd.DataFrame) -> dict:
 
     # Zeitspalten (Datetime)
     dt_info = {}
+    dt_warnings: list[str] = []
     for c in df.columns:
         try:
-            if pd.api.types.is_datetime64_any_dtype(df[c]):
-                s = pd.to_datetime(df[c], errors="coerce")
-            else:
-                # Wenn nicht schon datetime: sanft versuchen (coerce)
-                s = pd.to_datetime(df[c], errors="coerce", utc=False, dayfirst=False)
-                if s.isna().mean() > 0.5:
-                    # Wenn überwiegend NaT: lieber lassen
-                    continue
-            if s.notna().any():
-                dt_info[c] = {"min": str(s.min()), "max": str(s.max())}
+            if not _looks_like_datetime(df[c]):
+                continue
+            s = _parse_datetime_series(df[c])
+            if s.isna().mean() > 0.5:
+                # überwiegend NaT → nicht als Datum behandeln
+                dt_warnings.append(
+                    f"Spalte '{c}': uneinheitliches/unklares Datumsformat – wurde als Text behandelt. "
+                    "Tipp: Export in ein konsistentes Format (z. B. ISO 8601 'YYYY-MM-DD') und ohne Mischformen."
+                )
+                continue
+            dt_info[c] = {"min": str(s.min()), "max": str(s.max())}
         except Exception:
             continue
     if dt_info:
         insights["datetime"] = dt_info
+    if dt_warnings:
+        insights.setdefault("warnings", []).extend(dt_warnings)
 
     # Numerische Spalten
     num_cols = df.select_dtypes(include=["number"]).columns.tolist()
@@ -372,4 +454,4 @@ def compute_generic_insights(df: pd.DataFrame) -> dict:
     if cat_info:
         insights["categorical"] = cat_info
 
-        return insights
+    return insights
