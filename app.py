@@ -157,7 +157,8 @@ def analyze_dataset(dataset_id):
             {"id": dataset_id}
         ).mappings().all()
 
-    return render_template("result.html", summary=summary, columns=columns)
+    ai_available = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI"))
+    return render_template("result.html", summary=summary, columns=columns, dataset_id=dataset_id, ai_available=ai_available)
 
 
 @app.route("/privacy")

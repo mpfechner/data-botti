@@ -4,6 +4,11 @@
 
 {% block content %}
 <h1>Analysis Result for {{ summary.filename }}</h1>
+{% if ai_available %}
+<p style="margin: 8px 0 16px;">
+  <a class="btn btn-primary" href="{{ url_for('ai_assist', dataset_id=dataset_id) }}">Open AI Assistant</a>
+</p>
+{% endif %}
 {% if summary.stored_filename or summary.file_hash %}
 <p style="font-size:0.9em;color:#666;margin-top:-10px;">
   Gespeichert als: <code>{{ summary.stored_filename }}</code>
