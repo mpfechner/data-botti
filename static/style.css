@@ -175,3 +175,13 @@ a:hover {
 
 /* Ensure the submit button sits on its own line and centers */
 .upload-form button { display: inline-block; margin-top: 0.25rem; }
+
+.footer {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #666;
+  margin-top: 24px;
+  padding: 12px 8px;
+  border-top: 1px solid #e0e0e0;
+}
+.footer a { text-decoration: underline; }

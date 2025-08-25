@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}DataBotti{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='Logo.png') }}">
+</head>
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='Logo.png') }}" alt="Logo" class="logo">
+            <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti" class="logo-text">
+        </div>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    {% include 'partials/footer.html' ignore missing %}
+</body>
+</html>

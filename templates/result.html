@@ -1,25 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>DataBotti – Analysis Result</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div class="header">
-        <div class="logo-container">
-            <img src="{{ url_for('static', filename='Logo.png') }}" alt="DataBotti Logo" class="logo">
-            <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti Name" class="logo-text">
-        </div>
-    </div>
-    <h1>Analysis Result for {{ summary.filename }}</h1>
-    {% if summary.stored_filename or summary.file_hash %}
-    <p style="font-size:0.9em;color:#666;margin-top:-10px;">
-      Gespeichert als: <code>{{ summary.stored_filename }}</code>
-      {% if summary.file_hash %} &middot; Hash: <code>{{ summary.file_hash }}</code>{% endif %}
-    </p>
-    {% endif %}
-    {% set d = summary.delimiter_used %}
+{% extends "base.html" %}
+
+{% block title %}DataBotti – Analysis Result{% endblock %}
+
+{% block content %}
+<h1>Analysis Result for {{ summary.filename }}</h1>
+{% if summary.stored_filename or summary.file_hash %}
+<p style="font-size:0.9em;color:#666;margin-top:-10px;">
+  Gespeichert als: <code>{{ summary.stored_filename }}</code>
+  {% if summary.file_hash %} &middot; Hash: <code>{{ summary.file_hash }}</code>{% endif %}
+</p>
+{% endif %}
+
+{% set d = summary.delimiter_used %}
 {% if d == '\t' %}
   {% set d_label = 'Tabulator (\\t)' %}
 {% elif d == ';' %}
@@ -33,7 +25,8 @@
   Encoding: <code>{{ summary.encoding_used or 'unbekannt' }}</code>
   · Trennzeichen: <code>{{ d_label or 'unbekannt' }}</code>
 </p>
-    {% if summary.warnings and summary.warnings|length > 0 %}
+
+{% if summary.warnings and summary.warnings|length > 0 %}
   <div class="alert alert-warning">
     <ul style="margin-bottom:0;">
       {% for w in summary.warnings %}
@@ -43,18 +36,19 @@
   </div>
 {% endif %}
 
-    <h2>Dataset Overview</h2>
-    <ul>
-        <li><strong>Rows and Columns:</strong> {{ summary.shape[0] }} rows, {{ summary.shape[1] }} columns</li>
-        <li><strong>Columns:</strong> {{ summary.columns|join(', ') }}</li>
-    </ul>
+<h2>Dataset Overview</h2>
+<ul>
+  <li><strong>Rows and Columns:</strong> {{ summary.shape[0] }} rows, {{ summary.shape[1] }} columns</li>
+  <li><strong>Columns:</strong> {{ summary.columns|join(', ') }}</li>
+</ul>
 
-    <h2>Sample Data (first 10 rows)</h2>
-    {{ summary.head|safe }}
+<h2>Sample Data (first 10 rows)</h2>
+{{ summary.head|safe }}
 
-    <h2>Descriptive Statistics</h2>
-    {{ summary.description|safe }}
-    {% if summary.insights %}
+<h2>Descriptive Statistics</h2>
+{{ summary.description|safe }}
+
+{% if summary.insights %}
 <hr>
 <h2>Auto-Interpretation</h2>
 
@@ -130,37 +124,36 @@
 {% endif %}
 {% endif %}
 
-    {% if columns %}
-    <hr>
-    <h2>Spaltenübersicht</h2>
-    <table class="table table-sm table-striped table-hover">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Spaltenname</th>
-          <th>Datentyp</th>
-          <th>Nullable</th>
-          <th>Distinct</th>
-          <th>Min</th>
-          <th>Max</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for c in columns %}
-        <tr>
-          <td>{{ c.ordinal }}</td>
-          <td>{{ c.name }}</td>
-          <td>{{ c.dtype }}</td>
-          <td>{{ 'Ja' if c.is_nullable else 'Nein' }}</td>
-          <td>{{ c.distinct_count if c.distinct_count is not none else '–' }}</td>
-          <td>{{ c.min_val if c.min_val else '–' }}</td>
-          <td>{{ c.max_val if c.max_val else '–' }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
+{% if columns %}
+<hr>
+<h2>Spaltenübersicht</h2>
+<table class="table table-sm table-striped table-hover">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Spaltenname</th>
+      <th>Datentyp</th>
+      <th>Nullable</th>
+      <th>Distinct</th>
+      <th>Min</th>
+      <th>Max</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in columns %}
+    <tr>
+      <td>{{ c.ordinal }}</td>
+      <td>{{ c.name }}</td>
+      <td>{{ c.dtype }}</td>
+      <td>{{ 'Ja' if c.is_nullable else 'Nein' }}</td>
+      <td>{{ c.distinct_count if c.distinct_count is not none else '–' }}</td>
+      <td>{{ c.min_val if c.min_val else '–' }}</td>
+      <td>{{ c.max_val if c.max_val else '–' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 
-    <p><a href="{{ url_for('index') }}">Upload another file</a></p>
-</body>
-</html>
+<p><a href="{{ url_for('index') }}">Upload another file</a></p>
+{% endblock %}
