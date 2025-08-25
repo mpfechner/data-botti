@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}AI Assistant – DataBotti{% endblock %}
+
+{% block content %}
+<h1>AI Assistant für {{ filename }}</h1>
+
+<form method="post" style="margin-top:12px;">
+  <textarea name="prompt" rows="6" style="width:100%;" placeholder="Frag die KI z. B.: Fasse die wichtigsten Trends zusammen …"></textarea>
+  <div style="margin-top:8px;">
+    <button type="submit" class="btn btn-primary">Ask AI</button>
+    <a class="btn" href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}">Zurück</a>
+  </div>
+</form>
+{% endblock %}

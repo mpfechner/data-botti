@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}AI Result – DataBotti{% endblock %}
+
+{% block content %}
+<h1>AI Result für {{ filename }}</h1>
+
+{% if error %}
+  <div class="alert alert-warning">{{ error }}</div>
+{% else %}
+  <p><strong>Deine Anfrage:</strong> {{ user_prompt }}</p>
+  <hr>
+  <pre style="white-space:pre-wrap">{{ ai_answer }}</pre>
+{% endif %}
+
+<p style="margin-top:16px;">
+  <a class="btn" href="{{ url_for('ai_assist', dataset_id=dataset_id) }}">Neue Anfrage</a>
+  <a class="btn" href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}">Zurück zur Analyse</a>
+</p>
+{% endblock %}
