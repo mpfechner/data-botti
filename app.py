@@ -1,3 +1,17 @@
+ # --- AI modules (modular) ------------------------------------------------------
+try:
+    from services.ai_client import ask_model  # Low-level API call wrapper
+except Exception:
+    def ask_model(prompt: str, **kwargs):
+        return "(AI placeholder) AI client not wired."
+
+try:
+    from services.ai_tasks import build_chat_prompt  # High-level prompt builder
+except Exception:
+    def build_chat_prompt(user_prompt, summary=None):
+        up = (user_prompt or "").strip()
+        return f"You are a helpful data assistant.\n\nUser request:\n{up}"
+# -----------------------------------------------------------------------------
 # DataBotti – Webapp zur Analyse von CSV-Dateien
 # Webapp zur Analyse von CSV-Dateien, mit visuellen Auswertungen und Berichtsexport
 
@@ -159,6 +173,39 @@ def analyze_dataset(dataset_id):
 
     ai_available = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI"))
     return render_template("result.html", summary=summary, columns=columns, dataset_id=dataset_id, ai_available=ai_available)
+
+
+# --- AI Assistant route --------------------------------------------------------
+@app.route('/ai/<int:dataset_id>', methods=['GET', 'POST'])
+def ai_assist(dataset_id):
+    """Entry point for AI-assisted actions on a dataset.
+    GET: show prompt form; POST: call model and show answer.
+    """
+    # Fetch a minimal filename context for display
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT original_name
+                FROM dataset_files
+                WHERE dataset_id = :id
+            """),
+            {"id": dataset_id}
+        ).mappings().first()
+    filename = row["original_name"] if row else f"Dataset {dataset_id}"
+
+    if request.method == 'POST':
+        user_prompt = (request.form.get('prompt') or '').strip()
+        if not user_prompt:
+            return render_template('ai_result.html', dataset_id=dataset_id, filename=filename, error="Please enter a prompt.")
+        try:
+            full_prompt = build_chat_prompt(user_prompt, {"filename": filename})
+            ai_answer = ask_model(full_prompt)
+        except Exception as e:
+            ai_answer = f"AI error: {e}"
+        return render_template('ai_result.html', dataset_id=dataset_id, filename=filename, ai_answer=ai_answer, user_prompt=user_prompt)
+
+    # GET
+    return render_template('ai_prompt.html', dataset_id=dataset_id, filename=filename)
 
 
 @app.route("/privacy")
