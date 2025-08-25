@@ -185,3 +185,22 @@ a:hover {
   border-top: 1px solid #e0e0e0;
 }
 .footer a { text-decoration: underline; }
+
+/* --- Buttons (utility) --- */
+.btn {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+.btn:hover { text-decoration: none; }
+
+.btn-primary {
+  background: #007bff;
+  color: #fff;
+  border-color: #0073e6;
+}
+.btn-primary:hover { filter: brightness(0.95); }

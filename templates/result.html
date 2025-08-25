@@ -160,5 +160,10 @@
 </table>
 {% endif %}
 
+{% if ai_available %}
+<p style="margin: 16px 0;">
+  <a class="btn btn-primary" href="{{ url_for('ai_assist', dataset_id=dataset_id) }}">Open AI Assistant</a>
+</p>
+{% endif %}
 <p><a href="{{ url_for('index') }}">Upload another file</a></p>
 {% endblock %}

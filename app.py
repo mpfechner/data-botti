@@ -172,6 +172,9 @@ def analyze_dataset(dataset_id):
         ).mappings().all()
 
     ai_available = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI"))
+    print("DEBUG ai_available =", ai_available)
+    print("DEBUG OPENAI_API_KEY =", os.getenv("OPENAI_API_KEY"))
+    print("DEBUG OPENAI_API_KEY_BOTTI =", os.getenv("OPENAI_API_KEY_BOTTI"))
     return render_template("result.html", summary=summary, columns=columns, dataset_id=dataset_id, ai_available=ai_available)
 
 
