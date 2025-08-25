@@ -2,6 +2,30 @@
 {% block title %}AI Assistant – DataBotti{% endblock %}
 
 {% block content %}
+<!-- AI Opt-in Popup -->
+<div id="ai-optin-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;">
+  <div style="background:#fff;padding:20px;border-radius:8px;max-width:500px;width:90%;text-align:center;">
+    <h2>Zustimmung erforderlich</h2>
+    <p>Die KI-Funktion analysiert die übermittelten Daten mithilfe externer Dienste. Möchten Sie fortfahren?</p>
+    <div style="margin-top:16px;">
+      <button id="ai-optin-accept" class="btn btn-primary">Ja, fortfahren</button>
+      <a href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}" class="btn">Nein, zurück</a>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var overlay = document.getElementById("ai-optin-overlay");
+  var acceptBtn = document.getElementById("ai-optin-accept");
+  if (acceptBtn) {
+    acceptBtn.addEventListener("click", function() {
+      overlay.style.display = "none";
+    });
+  }
+});
+</script>
+
 <h1>AI Assistant für {{ filename }}</h1>
 
 <form method="post" style="margin-top:12px;">
