@@ -13,12 +13,29 @@ from __future__ import annotations
 import os
 from typing import Optional, Dict, Any
 
+# Local router deciding the cheapest suitable model
+from .ai_router import choose_model  # local router deciding the cheapest suitable model
+
 
 class AIClientNotConfigured(RuntimeError):
     """Raised when the AI client is not yet wired/configured (e.g., missing API key)."""
 
 
-def ask_model(prompt: str, **kwargs: Any) -> str:
+# Helper to estimate cache ratio (placeholder)
+def _estimate_cache_ratio(context_id: Optional[str]) -> float:
+    """Very small placeholder: returns 0.0 if we don't know.
+    Later you can wire this to your session/context tracking.
+    """
+    return 0.0 if not context_id else 0.9  # assume high reuse if an id is present
+
+
+def ask_model(
+    prompt: str,
+    *,
+    expected_output: str = "medium",
+    context_id: Optional[str] = None,
+    **kwargs: Any,
+) -> str:
     """
     Minimal façade for calling an LLM.
 
@@ -54,16 +71,32 @@ def ask_model(prompt: str, **kwargs: Any) -> str:
             "No AI provider configured. Set OPENAI_API_KEY (or OPENAI_API_KEY_BOTTI) in your environment."
         )
 
+    # --- Routing: decide model based on expected output and (estimated) cache ratio
+    cache_ratio = _estimate_cache_ratio(context_id)
+    routed_model = choose_model(expected_output, cache_ratio)
+
+    # Allow manual override via kwargs["model"], otherwise use routed_model
+    model = kwargs.get("model", routed_model)
+
+    # Map expected_output to max tokens unless explicitly overridden
+    default_max = {"short": 300, "medium": 650, "long": 1000}.get(expected_output, 650)
+    max_tokens = int(kwargs.get("max_tokens", default_max))
+    temperature = float(kwargs.get("temperature", 0.2))
+    system_prompt = kwargs.get(
+        "system_prompt",
+        "You are a helpful data assistant for CSV/report analysis. Answer clearly and concisely.",
+    )
+
     # --- OpenAI example (lazy import to avoid hard dependency if unused) -------
     try:
         # If you use the official OpenAI python client:
         # from openai import OpenAI
         # client = OpenAI(api_key=openai_key)
         #
-        # model = kwargs.get("model", "gpt-4o-mini")  # pick your default
-        # system_prompt = kwargs.get("system_prompt", "You are a helpful data assistant for CSV analysis.")
-        # temperature = float(kwargs.get("temperature", 0.2))
-        # max_tokens = int(kwargs.get("max_tokens", 800))
+        # model = model
+        # system_prompt = system_prompt
+        # temperature = temperature
+        # max_tokens = max_tokens
         #
         # resp = client.chat.completions.create(
         #     model=model,
@@ -77,7 +110,7 @@ def ask_model(prompt: str, **kwargs: Any) -> str:
         # return resp.choices[0].message.content.strip()
 
         # Placeholder until you wire the real client:
-        return "(AI placeholder) The AI client is configured (API key present), but the provider call is not yet implemented."
+        return f"(AI placeholder) Routed model: {model}. API key present, provider call not yet implemented."
     except Exception as e:
         # Bubble up with a clear message; the caller can render it nicely.
-        raise
+        raise e
