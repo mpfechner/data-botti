@@ -23,12 +23,44 @@ document.addEventListener("DOMContentLoaded", function() {
       overlay.style.display = "none";
     });
   }
+
+  // --- Buttons für vorgefertigte Prompts ---
+  var promptBox = document.querySelector('textarea[name="prompt"]');
+  var eo = document.getElementById('expected_output');
+  var btnSummary = document.getElementById('btn-fn-summary');
+  var btnOutliers = document.getElementById('btn-fn-outliers');
+  var btnQuality = document.getElementById('btn-fn-quality');
+
+  if (btnSummary && promptBox && eo) {
+    btnSummary.addEventListener('click', function() {
+      promptBox.value = "Erstelle eine Management Summary in 5–7 Bullet Points zu diesem Datensatz. Fokus: wichtigste Trends, Ausnahmen, Risiken. Klare, präzise Sprache.";
+      eo.value = "long";
+    });
+  }
+  if (btnOutliers && promptBox && eo) {
+    btnOutliers.addEventListener('click', function() {
+      promptBox.value = "Nenne die 3 größten Ausreißer (mit Spalte/Zeile) und gib je 1 kurzen, plausiblen Erklärsatz. Antworte knapp.";
+      eo.value = "short";
+    });
+  }
+  if (btnQuality && promptBox && eo) {
+    btnQuality.addEventListener('click', function() {
+      promptBox.value = "Prüfe die Datenqualität: fehlende Werte, Dubletten, Extremwerte, inkonsistente Kategorien. Liefere eine knappe Checkliste mit 4–6 Punkten.";
+      eo.value = "medium";
+    });
+  }
 });
 </script>
 
 <h1>AI Assistant für {{ filename }}</h1>
 
 <form method="post" style="margin-top:12px;">
+  <input type="hidden" id="expected_output" name="expected_output" value="medium">
+  <div class="btn-group" style="margin:8px 0; display:flex; gap:8px; flex-wrap:wrap;">
+    <button type="button" class="btn btn-secondary" id="btn-fn-summary">Report zusammenfassen</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-outliers">Ausreißer erklären (kurz)</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-quality">Datenqualität prüfen</button>
+  </div>
   <textarea name="prompt" rows="6" style="width:100%;" placeholder="Frag die KI z. B.: Fasse die wichtigsten Trends zusammen …"></textarea>
   <div style="margin-top:8px;">
     <button type="submit" class="btn btn-primary">Ask AI</button>
