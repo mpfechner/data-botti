@@ -1,4 +1,4 @@
- # --- AI modules (modular) ------------------------------------------------------
+# --- AI modules (modular) ------------------------------------------------------
 try:
     from services.ai_client import ask_model  # Low-level API call wrapper
 except Exception:
@@ -26,7 +26,8 @@ from sqlalchemy import text
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import matplotlib.pyplot as plt
-from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights
+from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights, get_dataset_original_name
+from services.ai_client import ask_model
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -179,36 +180,21 @@ def analyze_dataset(dataset_id):
 
 
 # --- AI Assistant route --------------------------------------------------------
-@app.route('/ai/<int:dataset_id>', methods=['GET', 'POST'])
+@app.route('/ai-legacy/<int:dataset_id>', methods=['GET', 'POST'])
 def ai_assist(dataset_id):
-    """Entry point for AI-assisted actions on a dataset.
-    GET: show prompt form; POST: call model and show answer.
-    """
-    # Fetch a minimal filename context for display
-    with engine.begin() as conn:
-        row = conn.execute(
-            text("""
-                SELECT original_name
-                FROM dataset_files
-                WHERE dataset_id = :id
-            """),
-            {"id": dataset_id}
-        ).mappings().first()
-    filename = row["original_name"] if row else f"Dataset {dataset_id}"
+    """Legacy AI assistant route – redirect to the new route to avoid duplication."""
+    return redirect(url_for('ai_prompt', dataset_id=dataset_id))
 
-    if request.method == 'POST':
-        user_prompt = (request.form.get('prompt') or '').strip()
-        if not user_prompt:
-            return render_template('ai_result.html', dataset_id=dataset_id, filename=filename, error="Please enter a prompt.")
-        try:
-            full_prompt = build_chat_prompt(user_prompt, {"filename": filename})
-            ai_answer = ask_model(full_prompt)
-        except Exception as e:
-            ai_answer = f"AI error: {e}"
-        return render_template('ai_result.html', dataset_id=dataset_id, filename=filename, ai_answer=ai_answer, user_prompt=user_prompt)
 
-    # GET
-    return render_template('ai_prompt.html', dataset_id=dataset_id, filename=filename)
+@app.route('/ai/<int:dataset_id>', methods=['GET', 'POST'])
+def ai_prompt(dataset_id):
+    filename = get_dataset_original_name(engine, dataset_id)
+    if request.method == "POST":
+        prompt = request.form.get("prompt", "")
+        expected_output = request.form.get("expected_output", "medium")
+        result = ask_model(prompt, expected_output=expected_output, context_id=dataset_id)
+        return render_template("ai_result.html", result=result, filename=filename, dataset_id=dataset_id)
+    return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id)
 
 
 @app.route("/privacy")

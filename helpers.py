@@ -455,3 +455,20 @@ def compute_generic_insights(df: pd.DataFrame) -> dict:
         insights["categorical"] = cat_info
 
     return insights
+
+from sqlalchemy import text as _sql_text
+
+def get_dataset_original_name(engine, dataset_id: int) -> str:
+    """Liefert den Original-Dateinamen zu dataset_id oder einen Fallback."""
+    with engine.begin() as conn:
+        row = conn.execute(
+            _sql_text(
+                """
+                SELECT original_name
+                FROM dataset_files
+                WHERE dataset_id = :id
+                """
+            ),
+            {"id": int(dataset_id)},
+        ).mappings().first()
+    return row["original_name"] if row else f"Dataset {int(dataset_id)}"
