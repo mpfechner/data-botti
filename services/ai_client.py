@@ -79,38 +79,131 @@ def ask_model(
     model = kwargs.get("model", routed_model)
 
     # Map expected_output to max tokens unless explicitly overridden
-    default_max = {"short": 300, "medium": 650, "long": 1000}.get(expected_output, 650)
-    max_tokens = int(kwargs.get("max_tokens", default_max))
-    temperature = float(kwargs.get("temperature", 0.2))
+    default_max = {"short": 600, "medium": 800, "long": 1200}.get(expected_output, 800)
+    # ensure a sensible floor so the model returns something
+    max_tokens = max(64, int(kwargs.get("max_tokens", default_max)))
+    # Temperature handling: default 1.0 (broadly supported); only send if not 1.0
+    _temp_kw = kwargs.get("temperature", None)
+    if _temp_kw is None:
+        temperature = 1.0
+    else:
+        temperature = float(_temp_kw)
     system_prompt = kwargs.get(
         "system_prompt",
         "You are a helpful data assistant for CSV/report analysis. Answer clearly and concisely.",
     )
 
-    # --- OpenAI example (lazy import to avoid hard dependency if unused) -------
+    # --- OpenAI call (lazy import keeps optional dependency) -----------------
     try:
-        # If you use the official OpenAI python client:
-        # from openai import OpenAI
-        # client = OpenAI(api_key=openai_key)
-        #
-        # model = model
-        # system_prompt = system_prompt
-        # temperature = temperature
-        # max_tokens = max_tokens
-        #
-        # resp = client.chat.completions.create(
-        #     model=model,
-        #     messages=[
-        #         {"role": "system", "content": system_prompt},
-        #         {"role": "user", "content": prompt},
-        #     ],
-        #     temperature=temperature,
-        #     max_tokens=max_tokens,
-        # )
-        # return resp.choices[0].message.content.strip()
+        # Import only when needed so the rest of the app works without the package
+        from openai import OpenAI  # type: ignore
+        client = OpenAI(api_key=openai_key)
 
-        # Placeholder until you wire the real client:
-        return f"(AI placeholder) Routed model: {model}. API key present, provider call not yet implemented."
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+
+        params = {
+            "model": model,
+            "messages": messages,
+            "max_completion_tokens": max_tokens,
+        }
+        if temperature != 1.0:
+            params["temperature"] = temperature
+        params["response_format"] = {"type": "text"}
+
+
+        resp = client.chat.completions.create(**params)
+
+        #print("DEBUG raw response:", resp)
+
+        content = ""
+        try:
+            choice0 = resp.choices[0]
+            # Newer SDKs: message.content may be str or list of content parts
+            msg = getattr(choice0, "message", None)
+            if msg is not None:
+                mc = getattr(msg, "content", "")
+                if isinstance(mc, str):
+                    content = mc.strip()
+                elif isinstance(mc, list):
+                    parts = []
+                    for p in mc:
+                        # handle dicts {"type":"text","text":"..."} or objects with .text
+                        if isinstance(p, dict):
+                            t = p.get("text") or ""
+                            if t:
+                                parts.append(str(t))
+                        else:
+                            t = getattr(p, "text", None)
+                            if t:
+                                parts.append(str(t))
+                    content = "\n".join(parts).strip()
+            # Legacy fallback: some clients expose .text directly
+            if not content and hasattr(choice0, "text"):
+                content = (choice0.text or "").strip()
+        except Exception:
+            content = ""
+
+        if not content:
+            # One retry with larger budget and a safer model for short tasks
+            try:
+                fallback_model = model
+                if expected_output == "short" and not str(model).startswith("gpt-4o-mini"):
+                    fallback_model = "gpt-4o-mini"
+                params2 = {
+                    "model": fallback_model,
+                    "messages": messages,
+                    "max_completion_tokens": max(max_tokens, 600),
+                    "response_format": {"type": "text"},
+                }
+                if temperature != 1.0:
+                    params2["temperature"] = temperature
+
+                resp2 = client.chat.completions.create(**params2)
+
+                #print("DEBUG raw response:", resp2)
+
+                content2 = ""
+                try:
+                    choice0b = resp2.choices[0]
+                    msg2 = getattr(choice0b, "message", None)
+                    if msg2 is not None:
+                        mc2 = getattr(msg2, "content", "")
+                        if isinstance(mc2, str):
+                            content2 = mc2.strip()
+                        elif isinstance(mc2, list):
+                            parts2 = []
+                            for p in mc2:
+                                if isinstance(p, dict):
+                                    t = p.get("text") or ""
+                                    if t:
+                                        parts2.append(str(t))
+                                else:
+                                    t = getattr(p, "text", None)
+                                    if t:
+                                        parts2.append(str(t))
+                            content2 = "\n".join(parts2).strip()
+                    if not content2 and hasattr(choice0b, "text"):
+                        content2 = (choice0b.text or "").strip()
+                except Exception:
+                    content2 = ""
+
+                if content2:
+                    return content2
+            except Exception:
+                pass
+
+            return "(AI returned no textual content. Bitte versuche es erneut oder erhöhe die erwartete Ausgabelänge.)"
+        return content
+
+    except ModuleNotFoundError as e:
+        # openai package not installed
+        return (
+            f"(AI error) OpenAI client library not installed: {e}. "
+            f"Model chosen: {model}. Please `pip install openai` to enable real calls."
+        )
     except Exception as e:
         # Bubble up with a clear message; the caller can render it nicely.
         raise e

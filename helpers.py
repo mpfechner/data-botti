@@ -472,3 +472,95 @@ def get_dataset_original_name(engine, dataset_id: int) -> str:
             {"id": int(dataset_id)},
         ).mappings().first()
     return row["original_name"] if row else f"Dataset {int(dataset_id)}"
+
+
+def build_dataset_context(engine, dataset_id: int, n_rows: int = 5, max_cols: int = 12) -> str:
+    """Erzeuge einen kompakten Kontextblock aus dem gespeicherten CSV für LLM-Prompts.
+
+    Inhalt:
+      - Spaltenliste mit (vereinfachtem) dtype (max_cols begrenzt)
+      - Bis zu n_rows Beispielzeilen
+      - Basisstatistiken für numerische Spalten (count/mean/std/min/max, begrenzt)
+
+    Der Kontext ist absichtlich kompakt, um Token zu sparen und Caching zu begünstigen.
+    """
+    # 1) Datei-Metadaten laden (Pfad, Encoding, Delimiter)
+    with engine.begin() as conn:
+        meta = conn.execute(
+            _sql_text(
+                """
+                SELECT file_path, encoding, delimiter
+                FROM dataset_files
+                WHERE dataset_id = :id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"id": int(dataset_id)},
+        ).mappings().first()
+
+    if not meta:
+        return (
+            "(Kein Dateikontext gefunden: dataset_files-Eintrag fehlt. "
+            "Bitte lade eine CSV und versuche es erneut.)"
+        )
+
+    file_path = meta["file_path"]
+    preferred_enc = meta.get("encoding") if isinstance(meta, dict) else meta["encoding"]
+    preferred_delim = meta.get("delimiter") if isinstance(meta, dict) else meta["delimiter"]
+
+    # 2) CSV robust laden (gz-File)
+    try:
+        df, used_enc, used_delim = load_csv_resilient(
+            file_path=file_path,
+            preferred_encoding=preferred_enc,
+            preferred_delimiter=preferred_delim,
+        )
+    except Exception as e:
+        return f"(CSV konnte nicht geladen werden: {e})"
+
+    # 3) Spaltenliste + dtypes (gekürzt)
+    try:
+        cols = list(map(str, df.columns))
+        dtypes = [str(df[c].dtype) for c in df.columns]
+        if len(cols) > max_cols:
+            cols_show = cols[:max_cols] + [f"… (+{len(cols)-max_cols} weitere)"]
+            dtypes_show = dtypes[:max_cols] + ["…"]
+        else:
+            cols_show = cols
+            dtypes_show = dtypes
+        cols_block = "\n".join(f"- {c} ({t})" for c, t in zip(cols_show, dtypes_show))
+    except Exception:
+        cols_block = "(Spaltenliste nicht verfügbar)"
+
+    # 4) Beispielzeilen (head)
+    try:
+        head_df = df.head(n_rows).copy()
+        # String-Repräsentation kompakt halten
+        example_block = head_df.to_csv(index=False)  # CSV-ähnlich ist für LLMs ok
+    except Exception:
+        example_block = "(Beispielzeilen nicht verfügbar)"
+
+    # 5) Basis-Statistiken für numerische Spalten (begrenzen)
+    try:
+        num_df = df.select_dtypes(include=["number"]).copy()
+        stats_block = "(Keine numerischen Spalten)"
+        if not num_df.empty:
+            # describe kann groß werden; wir begrenzen auf die ersten max_cols/2 Spalten
+            limit = max(1, max_cols // 2)
+            num_df = num_df.iloc[:, :limit]
+            desc = num_df.describe().loc[["count", "mean", "std", "min", "max"]]
+            # runden für Lesbarkeit
+            desc = desc.applymap(lambda x: round(x, 4) if isinstance(x, (int, float)) else x)
+            stats_block = desc.to_csv()
+    except Exception:
+        stats_block = "(Statistiken nicht verfügbar)"
+
+    context = (
+        "### Datensatz-Kontext\n"
+        f"Spalten (max {max_cols}):\n{cols_block}\n\n"
+        f"Beispielzeilen (n={n_rows}):\n{example_block}\n"
+        f"Basisstatistiken (numerisch):\n{stats_block}"
+    )
+
+    return context

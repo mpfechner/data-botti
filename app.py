@@ -26,7 +26,7 @@ from sqlalchemy import text
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import matplotlib.pyplot as plt
-from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights, get_dataset_original_name
+from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights, get_dataset_original_name, build_dataset_context
 from services.ai_client import ask_model
 
 app = Flask(__name__)
@@ -192,8 +192,31 @@ def ai_prompt(dataset_id):
     if request.method == "POST":
         prompt = request.form.get("prompt", "")
         expected_output = request.form.get("expected_output", "medium")
-        result = ask_model(prompt, expected_output=expected_output, context_id=dataset_id)
-        return render_template("ai_result.html", result=result, filename=filename, dataset_id=dataset_id)
+
+        # Strenger System-Prompt: bleib bei Sensordaten, keine externen Fakten erfinden
+        system_prompt = (
+            "Du bist DataBotti, ein Assistent für die Analyse von Sensordaten (CSV). "
+            "Antworte ausschließlich anhand des bereitgestellten Datensatz-Kontexts (Spalten, Beispielzeilen, Statistiken). "
+            "Wenn der Kontext fehlt, sage das klar und liste knapp auf, was du brauchst. "
+            "Erfinde keine Geschäftskennzahlen oder externen Fakten."
+        )
+
+        context = build_dataset_context(engine, dataset_id, n_rows=5, max_cols=12)
+        final_prompt = f"{context}\n\n### Aufgabe\n{prompt}"
+
+        result = ask_model(
+            final_prompt,
+            expected_output=expected_output,
+            context_id=dataset_id,
+            system_prompt=system_prompt,
+        )
+        return render_template(
+            "ai_result.html",
+            result=result,
+            filename=filename,
+            dataset_id=dataset_id,
+            prompt=prompt,
+        )
     return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id)
 
 
