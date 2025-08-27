@@ -541,26 +541,160 @@ def build_dataset_context(engine, dataset_id: int, n_rows: int = 5, max_cols: in
     except Exception:
         example_block = "(Beispielzeilen nicht verfügbar)"
 
-    # 5) Basis-Statistiken für numerische Spalten (begrenzen)
+    # 5) Erweiterte Statistikblöcke: numerisch, Ausreißer, Extreme, Kategorisch, Histogramme
+    #    Ziele:
+    #      - Fünf-Zahlen-Zusammenfassung je numerischer Spalte
+    #      - IQR-basierte Outlier-Zählung
+    #      - Top/Bottom-k Extreme (Wert + Index)
+    #      - Kategorische Top-N und Kardinalität
+    #      - Leichte Histogramm-Bins (counts)
     try:
+        # Limits, damit der Prompt kompakt bleibt
+        num_limit = max(1, max_cols // 2)
+        cat_limit = max(1, max_cols // 2)
+        k_extremes = 3
+        hist_bins = 10
+
+        # --- Numerische Spalten: fünf Zahlen + mean/std
         num_df = df.select_dtypes(include=["number"]).copy()
-        stats_block = "(Keine numerischen Spalten)"
+        numeric_block = "(Keine numerischen Spalten)"
+        outlier_block = "(Keine numerischen Spalten)"
+        extremes_block = "(Keine numerischen Spalten)"
+        hist_block = "(Keine numerischen Spalten)"
         if not num_df.empty:
-            # describe kann groß werden; wir begrenzen auf die ersten max_cols/2 Spalten
-            limit = max(1, max_cols // 2)
-            num_df = num_df.iloc[:, :limit]
-            desc = num_df.describe().loc[["count", "mean", "std", "min", "max"]]
-            # runden für Lesbarkeit
-            desc = desc.applymap(lambda x: round(x, 4) if isinstance(x, (int, float)) else x)
-            stats_block = desc.to_csv()
+            num_df = num_df.iloc[:, :num_limit]
+
+            # Fünf-Zahlen + mean/std
+            desc_rows = []
+            for col in num_df.columns:
+                s = pd.to_numeric(num_df[col], errors="coerce")
+                if not s.notna().any():
+                    continue
+                q1 = s.quantile(0.25)
+                q2 = s.quantile(0.50)
+                q3 = s.quantile(0.75)
+                row = {
+                    "column": str(col),
+                    "count": int(s.count()),
+                    "mean": float(s.mean()),
+                    "std": float(s.std()) if s.count() > 1 else None,
+                    "min": float(s.min()),
+                    "q25": float(q1),
+                    "median": float(q2),
+                    "q75": float(q3),
+                    "max": float(s.max()),
+                }
+                desc_rows.append(row)
+            if desc_rows:
+                numeric_block = "column,count,mean,std,min,q25,median,q75,max\n" + "\n".join(
+                    f"{r['column']},{r['count']},{round(r['mean'],4) if r['mean'] is not None else ''},"
+                    f"{round(r['std'],4) if r['std'] is not None else ''},{round(r['min'],4)},"
+                    f"{round(r['q25'],4)},{round(r['median'],4)},{round(r['q75'],4)},{round(r['max'],4)}"
+                    for r in desc_rows
+                )
+
+            # IQR-Outlier je Spalte
+            out_rows = []
+            for col in num_df.columns:
+                s = pd.to_numeric(num_df[col], errors="coerce")
+                s = s.dropna()
+                if s.empty:
+                    continue
+                q1 = s.quantile(0.25)
+                q3 = s.quantile(0.75)
+                iqr = float(q3 - q1)
+                lower = float(q1 - 1.5 * iqr)
+                upper = float(q3 + 1.5 * iqr)
+                mask = (s < lower) | (s > upper)
+                out_count = int(mask.sum())
+                out_ratio = float(out_count / max(1, s.size))
+                out_rows.append({
+                    "column": str(col),
+                    "outliers": out_count,
+                    "ratio": round(out_ratio, 6),
+                    "lower": lower,
+                    "upper": upper,
+                })
+            if out_rows:
+                outlier_block = "column,outliers,ratio,lower,upper\n" + "\n".join(
+                    f"{r['column']},{r['outliers']},{r['ratio']},{round(r['lower'],4)},{round(r['upper'],4)}"
+                    for r in out_rows
+                )
+
+            # Extreme Werte (Top/Bottom k) – nur Wert + Index (kein ganzer Datensatz)
+            ext_lines = ["column,type,index,value"]
+            for col in num_df.columns:
+                s = pd.to_numeric(num_df[col], errors="coerce")
+                s = s.dropna()
+                if s.empty:
+                    continue
+                # Bottom k
+                bot = s.nsmallest(k_extremes)
+                for idx, val in bot.items():
+                    ext_lines.append(f"{col},min,{idx},{round(float(val),4)}")
+                # Top k
+                top = s.nlargest(k_extremes)
+                for idx, val in top.items():
+                    ext_lines.append(f"{col},max,{idx},{round(float(val),4)}")
+            if len(ext_lines) > 1:
+                extremes_block = "\n".join(ext_lines)
+
+            # Histogramm-Bins (counts)
+            hist_lines = ["column,bin_left,bin_right,count"]
+            for col in num_df.columns:
+                s = pd.to_numeric(num_df[col], errors="coerce")
+                s = s.dropna()
+                if s.empty:
+                    continue
+                try:
+                    binned, edges = pd.cut(s, bins=hist_bins, retbins=True, include_lowest=True, duplicates="drop")
+                    counts = binned.value_counts(sort=False)
+                    # edges hat len = bins+1; counts hat len = bins_eff
+                    for i, cnt in enumerate(counts.values):
+                        left = float(edges[i])
+                        right = float(edges[i+1])
+                        hist_lines.append(f"{col},{round(left,4)},{round(right,4)},{int(cnt)}")
+                except Exception:
+                    continue
+            if len(hist_lines) > 1:
+                hist_block = "\n".join(hist_lines)
+
+        # --- Kategorische Spalten
+        cat_cols = [c for c in df.columns if str(df[c].dtype) not in map(str, df.select_dtypes(include=['number']).dtypes)]
+        categorical_block = "(Keine kategorischen Spalten)"
+        if cat_cols:
+            # per dtype-Filter oben kommen ggf. zu viele; wir limitieren
+            cat_cols = cat_cols[:cat_limit]
+            lines = ["column,count,unique,top,freq"]
+            for col in cat_cols:
+                try:
+                    s = df[col].astype("string")
+                    if not s.notna().any():
+                        continue
+                    vc = s.value_counts(dropna=True)
+                    top_val = str(vc.index[0]) if len(vc) > 0 else ""
+                    top_freq = int(vc.iloc[0]) if len(vc) > 0 else 0
+                    lines.append(f"{col},{int(s.count())},{int(s.nunique(dropna=True))},{top_val},{top_freq}")
+                except Exception:
+                    continue
+            if len(lines) > 1:
+                categorical_block = "\n".join(lines)
     except Exception:
-        stats_block = "(Statistiken nicht verfügbar)"
+        numeric_block = "(Statistiken nicht verfügbar)"
+        outlier_block = "(Ausreißer-Berechnung nicht verfügbar)"
+        extremes_block = "(Extreme nicht verfügbar)"
+        hist_block = "(Histogramme nicht verfügbar)"
+        categorical_block = "(Kategorische Zusammenfassung nicht verfügbar)"
 
     context = (
         "### Datensatz-Kontext\n"
         f"Spalten (max {max_cols}):\n{cols_block}\n\n"
         f"Beispielzeilen (n={n_rows}):\n{example_block}\n"
-        f"Basisstatistiken (numerisch):\n{stats_block}"
+        f"Numerik (Fünf-Zahlen + mean/std):\n{numeric_block}\n\n"
+        f"Ausreißer (IQR-Regel):\n{outlier_block}\n\n"
+        f"Extreme Werte (Top/Bottom {k_extremes}):\n{extremes_block}\n\n"
+        f"Histogramme (Counts, {hist_bins} Bins):\n{hist_block}\n\n"
+        f"Kategorisch (Top-N & Kardinalität):\n{categorical_block}"
     )
 
     return context
