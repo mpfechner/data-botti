@@ -28,9 +28,30 @@ from sqlalchemy.orm import sessionmaker
 import matplotlib.pyplot as plt
 from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights, get_dataset_original_name, build_dataset_context
 from services.ai_client import ask_model
+import logging
+from logging.handlers import RotatingFileHandler
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+# --- Logging configuration ---------------------------------------------------
+# Configure a rotating file handler for logs
+_root_logger = logging.getLogger()
+_root_logger.setLevel(logging.DEBUG)
+
+_log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+_file_handler = RotatingFileHandler('databotti.log', maxBytes=1_000_000, backupCount=3)
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(_log_formatter)
+
+# Avoid adding duplicate handlers if app is reloaded
+if not any(isinstance(h, RotatingFileHandler) and getattr(h, 'baseFilename', '').endswith('databotti.log') for h in _root_logger.handlers):
+    _root_logger.addHandler(_file_handler)
+
+# Route Flask's app.logger through the same handlers
+app.logger.handlers = _root_logger.handlers
+app.logger.setLevel(logging.DEBUG)
+# ---------------------------------------------------------------------------
 
 
 # Stelle sicher, dass der Upload-Ordner existiert
@@ -173,9 +194,7 @@ def analyze_dataset(dataset_id):
         ).mappings().all()
 
     ai_available = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI"))
-    print("DEBUG ai_available =", ai_available)
-    print("DEBUG OPENAI_API_KEY =", os.getenv("OPENAI_API_KEY"))
-    print("DEBUG OPENAI_API_KEY_BOTTI =", os.getenv("OPENAI_API_KEY_BOTTI"))
+    app.logger.debug("ai_available = %s", ai_available)
     return render_template("result.html", summary=summary, columns=columns, dataset_id=dataset_id, ai_available=ai_available)
 
 

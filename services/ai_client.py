@@ -13,6 +13,9 @@ from __future__ import annotations
 import os
 from typing import Optional, Dict, Any
 
+import logging
+logger = logging.getLogger(__name__)
+
 # Local router deciding the cheapest suitable model
 from .ai_router import choose_model  # local router deciding the cheapest suitable model
 
@@ -116,7 +119,7 @@ def ask_model(
 
         resp = client.chat.completions.create(**params)
 
-        #print("DEBUG raw response:", resp)
+        # logger.debug("raw response: %s", resp)
 
         content = ""
         try:
@@ -163,7 +166,7 @@ def ask_model(
 
                 resp2 = client.chat.completions.create(**params2)
 
-                #print("DEBUG raw response:", resp2)
+                # logger.debug("raw response (retry): %s", resp2)
 
                 content2 = ""
                 try:
