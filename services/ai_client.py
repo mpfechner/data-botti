@@ -110,11 +110,10 @@ def ask_model(
         params = {
             "model": model,
             "messages": messages,
-            "max_completion_tokens": max_tokens,
+            "max_tokens": max_tokens,
         }
         if temperature != 1.0:
             params["temperature"] = temperature
-        params["response_format"] = {"type": "text"}
 
 
         resp = client.chat.completions.create(**params)
@@ -158,8 +157,7 @@ def ask_model(
                 params2 = {
                     "model": fallback_model,
                     "messages": messages,
-                    "max_completion_tokens": max(max_tokens, 600),
-                    "response_format": {"type": "text"},
+                    "max_tokens": max(max_tokens, 600),
                 }
                 if temperature != 1.0:
                     params2["temperature"] = temperature
