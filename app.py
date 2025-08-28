@@ -1,3 +1,6 @@
+# DataBotti – Webapp zur Analyse von CSV-Dateien
+# Webapp zur Analyse von CSV-Dateien, mit visuellen Auswertungen und Berichtsexport
+
 # --- AI modules (modular) ------------------------------------------------------
 try:
     from services.ai_client import ask_model  # Low-level API call wrapper
@@ -12,8 +15,7 @@ except Exception:
         up = (user_prompt or "").strip()
         return f"You are a helpful data assistant.\n\nUser request:\n{up}"
 # -----------------------------------------------------------------------------
-# DataBotti – Webapp zur Analyse von CSV-Dateien
-# Webapp zur Analyse von CSV-Dateien, mit visuellen Auswertungen und Berichtsexport
+
 
 from flask import Flask, render_template, request, redirect, url_for
 import os
@@ -27,7 +29,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import matplotlib.pyplot as plt
 from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights, get_dataset_original_name, build_dataset_context
-from services.ai_client import ask_model
 import logging
 from logging.handlers import RotatingFileHandler
 
