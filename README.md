@@ -1,14 +1,24 @@
 # DataBotti
 
 DataBotti is a data analyzing tool with AI support.  
-Current status: **Pre-MVP / Work in Progress** – basic functions are available, AI features are currently being prepared.  
+Current status: **MVP / Work in Progress** – basic functions are available, AI functionality is integrated and will be extended. Next milestone: user management.  
 
 ---
 
-## Features (so far)
+## Important note on AI functionality
+DataBotti requires a **paid API key for OpenAI** to enable its AI features.  
+No API key is included or provided with this repository.  
+You can obtain an API key by creating an account at [OpenAI](https://openai.com/api/).
+
+---
+
+---
+
+## Features
 - 📊 Database connection (MariaDB via Docker or locally with SQL script)  
-- 🔍 Initial standard functions for data analysis  
-- 🤖 Preparation for AI-supported analyses (OpenAI API)  
+- 🔍 Standard functions for data analysis  
+- 🤖 Integrated AI-supported analyses (OpenAI API)  
+- 🛡️ Logging and safety-focused prompt design  
 
 ---
 
@@ -64,5 +74,6 @@ Then you can start the backend locally in PyCharm while the database runs in the
 
 ## Status & Roadmap
 - ✅ Basic functions running  
-- 🔄 Integration of AI features (OpenAI API)  
-- ⏳ Preparation of tests and first release as MVP
+- ✅ AI features integrated (OpenAI API)  
+- 🔄 Extension of AI functionality (robust stats, outlier detection, safety prompts)  
+- ⏳ Next milestone: user management and test coverage
