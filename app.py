@@ -31,9 +31,16 @@ import matplotlib.pyplot as plt
 from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights, get_dataset_original_name, build_dataset_context
 import logging
 from logging.handlers import RotatingFileHandler
+from routes.datasets import datasets_bp
+from routes.assistant import assistant_bp
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+# Blueprints an die App „andocken“
+app.register_blueprint(datasets_bp, url_prefix="/datasets")
+app.register_blueprint(assistant_bp, url_prefix="/assistant")
+
 
 # --- Logging configuration ---------------------------------------------------
 # Configure a rotating file handler for logs
