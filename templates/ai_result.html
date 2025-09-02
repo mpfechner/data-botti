@@ -15,7 +15,7 @@
 </div>
 
 <div style="margin-top:16px;display:flex;gap:8px;">
-  <a class="btn btn-primary" href="{{ url_for('ai_prompt', dataset_id=dataset_id) }}">Neue Anfrage</a>
+  <a class="btn btn-primary" href="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}">Neue Anfrage</a>
   <a class="btn" href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}">Zurück zur Analyse</a>
 </div>
 {% endblock %}

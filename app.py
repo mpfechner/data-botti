@@ -1,21 +1,6 @@
 # DataBotti – Webapp zur Analyse von CSV-Dateien
 # Webapp zur Analyse von CSV-Dateien, mit visuellen Auswertungen und Berichtsexport
 
-# --- AI modules (modular) ------------------------------------------------------
-try:
-    from services.ai_client import ask_model  # Low-level API call wrapper
-except Exception:
-    def ask_model(prompt: str, **kwargs):
-        return "(AI placeholder) AI client not wired."
-
-try:
-    from services.ai_tasks import build_chat_prompt  # High-level prompt builder
-except Exception:
-    def build_chat_prompt(user_prompt, summary=None):
-        up = (user_prompt or "").strip()
-        return f"You are a helpful data assistant.\n\nUser request:\n{up}"
-# -----------------------------------------------------------------------------
-
 
 from flask import Flask, render_template, request, redirect, url_for
 import os
@@ -43,7 +28,7 @@ app = Flask(__name__)
 
 # Blueprints an die App „andocken“
 app.register_blueprint(datasets_bp, url_prefix="/datasets")
-app.register_blueprint(assistant_bp, url_prefix="/assistant")
+app.register_blueprint(assistant_bp)
 
 # Apply config
 app.config.update(get_config())
@@ -70,6 +55,7 @@ engine = create_engine(
     f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}",
     pool_pre_ping=True,         # prüft Connection vor Nutzung → verhindert 2013-Fehler
 )
+app.config['DB_ENGINE'] = engine
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -193,50 +179,6 @@ def analyze_dataset(dataset_id):
     ai_available = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI"))
     app.logger.debug("ai_available = %s", ai_available)
     return render_template("result.html", summary=summary, columns=columns, dataset_id=dataset_id, ai_available=ai_available)
-
-
-# --- AI Assistant route --------------------------------------------------------
-@app.route('/ai-legacy/<int:dataset_id>', methods=['GET', 'POST'])
-def ai_assist(dataset_id):
-    """Legacy AI assistant route – redirect to the new route to avoid duplication."""
-    return redirect(url_for('ai_prompt', dataset_id=dataset_id))
-
-
-@app.route('/ai/<int:dataset_id>', methods=['GET', 'POST'])
-def ai_prompt(dataset_id):
-    filename = get_dataset_original_name(engine, dataset_id)
-    if request.method == "POST":
-        prompt = request.form.get("prompt", "")
-        expected_output = request.form.get("expected_output", "medium")
-
-        # Strenger System-Prompt: bleib bei Sensordaten, keine externen Fakten erfinden
-        system_prompt = (
-            "Du bist DataBotti, ein Assistent für die Analyse von Sensordaten (CSV). "
-            "Antworte ausschließlich anhand des bereitgestellten Datensatz-Kontexts (Spalten, Beispielzeilen, Statistiken). "
-            "Wenn der Kontext fehlt, sage das klar und liste knapp auf, was du brauchst. "
-            "Erfinde keine Geschäftskennzahlen oder externen Fakten. "
-            "Benenne Unsicherheit ausdrücklich, wenn Evidenz im Kontext fehlt oder unklar ist (z.B. wenn keine Extremwerte oder Verteilungsdaten vorliegen). "
-            "Stütze Aussagen auf konkrete Zahlen aus dem Kontext (z.B. Min/Max, Quantile, Outlier-Anteile) und markiere Hypothesen als solche. "
-            "Gib keine sensiblen oder externen Daten aus und lehne Spekulationen ohne Datengrundlage ab."
-        )
-
-        context = build_dataset_context(engine, dataset_id, n_rows=5, max_cols=12)
-        final_prompt = f"{context}\n\n### Aufgabe\n{prompt}"
-
-        result = ask_model(
-            final_prompt,
-            expected_output=expected_output,
-            context_id=dataset_id,
-            system_prompt=system_prompt,
-        )
-        return render_template(
-            "ai_result.html",
-            result=result,
-            filename=filename,
-            dataset_id=dataset_id,
-            prompt=prompt,
-        )
-    return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id)
 
 
 @app.route("/privacy")

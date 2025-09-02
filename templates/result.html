@@ -6,7 +6,7 @@
 <h1>Analysis Result for {{ summary.filename }}</h1>
 {% if ai_available %}
 <p style="margin: 8px 0 16px;">
-  <a class="btn btn-primary" href="{{ url_for('ai_assist', dataset_id=dataset_id) }}">Open AI Assistant</a>
+  <a class="btn btn-primary" href="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}">Open AI Assistant</a>
 </p>
 {% endif %}
 {% if summary.stored_filename or summary.file_hash %}
@@ -162,7 +162,7 @@
 
 {% if ai_available %}
 <p style="margin: 16px 0;">
-  <a class="btn btn-primary" href="{{ url_for('ai_assist', dataset_id=dataset_id) }}">Open AI Assistant</a>
+  <a class="btn btn-primary" href="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}">Open AI Assistant</a>
 </p>
 {% endif %}
 <p><a href="{{ url_for('index') }}">Upload another file</a></p>

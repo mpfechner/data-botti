@@ -54,7 +54,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
 <h1>AI Assistant für {{ filename }}</h1>
 
-<form method="post" style="margin-top:12px;">
+<form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="margin-top:12px;">
   <input type="hidden" id="expected_output" name="expected_output" value="medium">
   <div class="btn-group" style="margin:8px 0; display:flex; gap:8px; flex-wrap:wrap;">
     <button type="button" class="btn btn-secondary" id="btn-fn-summary">Report zusammenfassen</button>
