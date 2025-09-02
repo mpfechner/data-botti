@@ -66,7 +66,16 @@ Saubere Trennung von Schichten:
 - [x] Schritt 1: Struktur + Platzhalter (inkl. dataset_service.py, ai_router.py)
 - [x] Schritt 2: Blueprints registriert, App startet wie zuvor
 - [x] Schritt 3: infra/config.py & infra/logging.py eingebunden
-- [ ] Schritt 4: AI-Layer Inventur dokumentiert
+- [x] Schritt 4: AI-Layer Inventur dokumentiert
+
+
+## AI-Layer Inventur (Ist-Zustand)
+- `build_chat_prompt` wird **nur** an einer Stelle importiert und dort bei Importfehler lokal als Fallback definiert (Try/Except). → Aktuell **kein** zentraler Einsatz in Routen ersichtlich.
+- `choose_model(expected_output, cache_ratio)` wird in `services/ai_client.ask_model` verwendet (Import: `from .ai_router import choose_model`).
+- Der **eigentliche Modellaufruf** passiert in `services/ai_client.ask_model` via `OpenAI(...).chat.completions.create(...)`.
+- API-Key-Quelle: `OPENAI_API_KEY` **oder** `OPENAI_API_KEY_BOTTI` (Env). → Konfig in `infra/config` optional, aber derzeit **direkter** Zugriff via `os.getenv` in `ai_client`.
+- Fehlerszenarien: Kein Key → `AIClientNotConfigured`; fehlende `openai`-Lib → Textlicher Hinweis; leere Antwort → interner **Retry** mit angepasstem Modell/`max_tokens`.
+- **Unklar/TBD:** Wo genau `ask_model(...)` und/oder `build_chat_prompt(...)` aktuell aufgerufen werden (Routen oder Hilfsfunktionen). → Nächster Schritt: Code-Stellen identifizieren und migrieren.
 
 ## Master-Checkliste (Refactoring gesamt)
 
