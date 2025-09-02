@@ -57,11 +57,8 @@ def build_dataset_summary_prompt(summary: Optional[Mapping[str, Any]]) -> str:
     meta = "\n".join(meta_lines)
 
     return (
-        "You are a precise data assistant. "
-        "Summarize the dataset in one concise paragraph. "
-        "Mention size, notable columns, potential data quality issues (only if evident), "
-        "and suggest 1–2 next analytical steps.\n\n"
-        f"Context:\n{meta}"
+        "Fasse den Datensatz in einem prägnanten Absatz zusammen: Größe (Zeilen x Spalten), auffällige Spalten, "
+        "offensichtliche Datenqualitätsprobleme (nur wenn erkennbar) sowie 1–2 sinnvolle nächste Analyseschritte."
     )
 
 
