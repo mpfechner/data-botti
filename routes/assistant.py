@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, current_app
+from flask import Blueprint, render_template, request, current_app, session, redirect, url_for
 from services.ai_client import ask_model
 from services.ai_tasks import build_chat_prompt
 from helpers import get_dataset_original_name, build_dataset_context
@@ -11,7 +11,16 @@ def ai_prompt(dataset_id):
     engine = current_app.config["DB_ENGINE"]
     filename = get_dataset_original_name(engine, dataset_id)
 
+    ai_consent = bool(session.get("ai_consent", False))
+
     if request.method == "POST":
+        if request.form.get("consent") == "1":
+            session["ai_consent"] = True
+            return redirect(url_for("assistant.ai_prompt", dataset_id=dataset_id))
+
+        if not ai_consent:
+            return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id, ai_consent=False)
+
         prompt = request.form.get("prompt", "")
         expected_output = request.form.get("expected_output", "medium")
 
@@ -43,4 +52,4 @@ def ai_prompt(dataset_id):
             prompt=prompt,
         )
 
-    return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id)
+    return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id, ai_consent=ai_consent)

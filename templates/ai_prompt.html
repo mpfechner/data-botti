@@ -2,17 +2,22 @@
 {% block title %}AI Assistant – DataBotti{% endblock %}
 
 {% block content %}
+{% if not ai_consent %}
 <!-- AI Opt-in Popup -->
 <div id="ai-optin-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;">
   <div style="background:#fff;padding:20px;border-radius:8px;max-width:500px;width:90%;text-align:center;">
     <h2>Zustimmung erforderlich</h2>
     <p>Die KI-Funktion analysiert die übermittelten Daten mithilfe externer Dienste. Möchten Sie fortfahren?</p>
     <div style="margin-top:16px;">
-      <button id="ai-optin-accept" class="btn btn-primary">Ja, fortfahren</button>
+      <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="display:inline;">
+        <input type="hidden" name="consent" value="1">
+        <button type="submit" class="btn btn-primary">Ja, fortfahren</button>
+      </form>
       <a href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}" class="btn">Nein, zurück</a>
     </div>
   </div>
 </div>
+{% endif %}
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -52,6 +57,7 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 </script>
 
+{% if ai_consent %}
 <h1>AI Assistant für {{ filename }}</h1>
 
 <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="margin-top:12px;">
@@ -67,4 +73,5 @@ document.addEventListener("DOMContentLoaded", function() {
     <a class="btn" href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}">Zurück</a>
   </div>
 </form>
+{% endif %}
 {% endblock %}

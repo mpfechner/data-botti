@@ -67,7 +67,7 @@ Saubere Trennung von Schichten:
 - [x] Schritt 2: Blueprints registriert, App startet wie zuvor
 - [x] Schritt 3: infra/config.py & infra/logging.py eingebunden
 - [x] Schritt 4: AI-Layer Inventur dokumentiert
-
+- [x] Schritt 5: /ai-Route nach assistant blueprint verschoben
 
 ## AI-Layer Inventur (Ist-Zustand)
 - `build_chat_prompt` wird **nur** an einer Stelle importiert und dort bei Importfehler lokal als Fallback definiert (Try/Except). → Aktuell **kein** zentraler Einsatz in Routen ersichtlich.
@@ -88,8 +88,11 @@ Saubere Trennung von Schichten:
 
 ### Etappe 2 – Migration Endpoints & Services
 **Routes /assistant**
-- [ ] `/ai/<id>` GET: Prompt-Form in `routes/assistant.py`
-- [ ] `/ai/<id>` POST: Orchestrierung `ai_tasks` → `ai_router` → `ai_client`
+- [x] `/ai/<id>` GET: Prompt-Form in `routes/assistant.py`
+- [x] `/ai/<id>` POST: Orchestrierung `ai_tasks` → `ai_router` → `ai_client`
+
+> Legacy-Route /ai-legacy/<id> entfernt, Endpunkt bleibt /ai/<id> (keine Breaking Changes).
+
 - [ ] (Legacy) `/ai-legacy/<id>`: Redirect oder entfernen
 
 **Routes /datasets**
@@ -109,7 +112,7 @@ Saubere Trennung von Schichten:
 - [ ] `app.py` enthält nur App-Start + Blueprint-Registrierung
 
 **Templates/Static**
-- [ ] Templates an neue Endpoints angepasst (`index.html`, `result.html`)
+- [x] Templates an neue Endpoints angepasst (`index.html`, `result.html`)
 
 **Config/Logging Konsistenz**
 - [x] `infra` integriert
