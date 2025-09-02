@@ -33,41 +33,30 @@ import logging
 from logging.handlers import RotatingFileHandler
 from routes.datasets import datasets_bp
 from routes.assistant import assistant_bp
+from infra.config import get_config
+from infra.logging import get_logger
+
+# Load environment variables early so infra.config sees them
+load_dotenv()
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
 
 # Blueprints an die App „andocken“
 app.register_blueprint(datasets_bp, url_prefix="/datasets")
 app.register_blueprint(assistant_bp, url_prefix="/assistant")
 
+# Apply config
+app.config.update(get_config())
 
-# --- Logging configuration ---------------------------------------------------
-# Configure a rotating file handler for logs
-_root_logger = logging.getLogger()
-_root_logger.setLevel(logging.DEBUG)
-
-_log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-_file_handler = RotatingFileHandler('databotti.log', maxBytes=1_000_000, backupCount=3)
-_file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(_log_formatter)
-
-# Avoid adding duplicate handlers if app is reloaded
-if not any(isinstance(h, RotatingFileHandler) and getattr(h, 'baseFilename', '').endswith('databotti.log') for h in _root_logger.handlers):
-    _root_logger.addHandler(_file_handler)
-
-# Route Flask's app.logger through the same handlers
-app.logger.handlers = _root_logger.handlers
-app.logger.setLevel(logging.DEBUG)
-# ---------------------------------------------------------------------------
+# Setup logger
+logger = get_logger(__name__)
+app.logger.handlers = logger.handlers
+app.logger.setLevel(logger.level)
+logger.info("Starting DataBotti application")
 
 
 # Stelle sicher, dass der Upload-Ordner existiert
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-
-# .env Variablen laden
-load_dotenv()
 
 
 # SQLAlchemy Engine erstellen
