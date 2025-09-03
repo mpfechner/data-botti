@@ -13,7 +13,7 @@
         <input type="hidden" name="consent" value="1">
         <button type="submit" class="btn btn-primary">Ja, fortfahren</button>
       </form>
-      <a href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}" class="btn">Nein, zurück</a>
+      <a href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}" class="btn">Nein, zurück</a>
     </div>
   </div>
 </div>
@@ -70,7 +70,7 @@ document.addEventListener("DOMContentLoaded", function() {
   <textarea name="prompt" rows="6" style="width:100%;" placeholder="Frag die KI z. B.: Fasse die wichtigsten Trends zusammen …"></textarea>
   <div style="margin-top:8px;">
     <button type="submit" class="btn btn-primary">Ask AI</button>
-    <a class="btn" href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}">Zurück</a>
+    <a class="btn" href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}">Zurück</a>
   </div>
 </form>
 {% endif %}
