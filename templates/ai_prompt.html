@@ -32,26 +32,73 @@ document.addEventListener("DOMContentLoaded", function() {
   // --- Buttons für vorgefertigte Prompts ---
   var promptBox = document.querySelector('textarea[name="prompt"]');
   var eo = document.getElementById('expected_output');
+  var task = document.getElementById('task');
   var btnSummary = document.getElementById('btn-fn-summary');
   var btnOutliers = document.getElementById('btn-fn-outliers');
   var btnQuality = document.getElementById('btn-fn-quality');
+  var btnCorr = document.getElementById('btn-fn-correlations');
+  var btnCats = document.getElementById('btn-fn-categories');
+  var btnTime = document.getElementById('btn-fn-time');
+  var btnDup = document.getElementById('btn-fn-duplicates');
+  var btnSeg = document.getElementById('btn-fn-segments');
 
-  if (btnSummary && promptBox && eo) {
+  function setEO(val) { if (eo) eo.value = val; }
+  function setTask(val) { if (task) task.value = val; }
+
+  if (btnSummary && promptBox) {
     btnSummary.addEventListener('click', function() {
-      promptBox.value = "Erstelle eine Management Summary in 5–7 Bullet Points zu diesem Datensatz. Fokus: wichtigste Trends, Ausnahmen, Risiken. Klare, präzise Sprache.";
-      eo.value = "long";
+      promptBox.value = "Erstelle eine Management-Zusammenfassung in 5–7 Bullet Points. Fokus: wichtigste Trends, Ausnahmen, Risiken. Klare, präzise Sprache.";
+      setEO('long');
+      setTask('summary');
     });
   }
-  if (btnOutliers && promptBox && eo) {
+  if (btnOutliers && promptBox) {
     btnOutliers.addEventListener('click', function() {
       promptBox.value = "Nenne die 3 größten Ausreißer (mit Spalte/Zeile) und gib je 1 kurzen, plausiblen Erklärsatz. Antworte knapp.";
-      eo.value = "short";
+      setEO('short');
+      setTask('outliers');
     });
   }
-  if (btnQuality && promptBox && eo) {
+  if (btnQuality && promptBox) {
     btnQuality.addEventListener('click', function() {
       promptBox.value = "Prüfe die Datenqualität: fehlende Werte, Dubletten, Extremwerte, inkonsistente Kategorien. Liefere eine knappe Checkliste mit 4–6 Punkten.";
-      eo.value = "medium";
+      setEO('medium');
+      setTask('quality');
+    });
+  }
+  if (btnCorr && promptBox) {
+    btnCorr.addEventListener('click', function() {
+      promptBox.value = "Analysiere Korrelationen zwischen numerischen Spalten. Nenne die 5 stärksten positiven und 5 stärksten negativen Korrelationen (mit Spaltenpaaren) und eine kurze Interpretation.";
+      setEO('medium');
+      setTask('correlations');
+    });
+  }
+  if (btnCats && promptBox) {
+    btnCats.addEventListener('click', function() {
+      promptBox.value = "Gib einen Überblick über kategoriale Spalten: Anzahl Kategorien, Top-Kategorie(n) mit Anteilen, lange Verteilungen (Long Tail). Fasse in 4–6 Bullet Points zusammen.";
+      setEO('medium');
+      setTask('categories');
+    });
+  }
+  if (btnTime && promptBox) {
+    btnTime.addEventListener('click', function() {
+      promptBox.value = "Untersuche zeitliche Muster: Trends, Saisonalität, Cluster. Nenne 3–5 Beobachtungen mit Datumshinweisen. Falls keine Datumsspalte vorhanden ist, erkläre das knapp.";
+      setEO('medium');
+      setTask('time_trends');
+    });
+  }
+  if (btnDup && promptBox) {
+    btnDup.addEventListener('click', function() {
+      promptBox.value = "Prüfe auf potenzielle Duplikate und Eindeutigkeit. Nenne Kandidatenschlüssel (einzeln oder Kombination), schätze die Duplikatrate und gib eine kurze Empfehlung.";
+      setEO('short');
+      setTask('duplicates');
+    });
+  }
+  if (btnSeg && promptBox) {
+    btnSeg.addEventListener('click', function() {
+      promptBox.value = "Vergleiche zentrale Kennzahlen über eine ausgewählte Kategorie (z. B. Preis/Menge nach Kategorie). Nenne 3–5 Unterschiede/Segmente mit kurzer Interpretation.";
+      setEO('medium');
+      setTask('segments');
     });
   }
 });
@@ -62,10 +109,16 @@ document.addEventListener("DOMContentLoaded", function() {
 
 <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="margin-top:12px;">
   <input type="hidden" id="expected_output" name="expected_output" value="medium">
+  <input type="hidden" id="task" name="task" value="">
   <div class="btn-group" style="margin:8px 0; display:flex; gap:8px; flex-wrap:wrap;">
-    <button type="button" class="btn btn-secondary" id="btn-fn-summary">Report zusammenfassen</button>
-    <button type="button" class="btn btn-secondary" id="btn-fn-outliers">Ausreißer erklären (kurz)</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-summary">Management-Zusammenfassung</button>
     <button type="button" class="btn btn-secondary" id="btn-fn-quality">Datenqualität prüfen</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-outliers">Ausreißer erklären (kurz)</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-correlations">Korrelationen (numerisch)</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-categories">Kategorien-Überblick</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-time">Zeitliche Muster</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-duplicates">Duplikate & Eindeutigkeit</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-segments">Segmentvergleich</button>
   </div>
   <textarea name="prompt" rows="6" style="width:100%;" placeholder="Frag die KI z. B.: Fasse die wichtigsten Trends zusammen …"></textarea>
   <div style="margin-top:8px;">

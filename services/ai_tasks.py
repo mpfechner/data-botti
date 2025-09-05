@@ -62,6 +62,32 @@ def build_dataset_summary_prompt(summary: Optional[Mapping[str, Any]]) -> str:
     )
 
 
+# ---- Stage-1 column selection prompt builder --------------------------------
+
+def build_relevant_columns_prompt(user_task: str, rows: int, cols: int, column_summaries: list[str]) -> str:
+    """
+    Build the Stage-1 prompt for column relevance selection.
+    """
+    header = (
+        f"User task: {user_task}\n\n"
+        f"Dataset has {rows} rows and {cols} columns.\n\n"
+        "Below is one line per column with type info, cardinality and flags:\n"
+    )
+    cols_block = "\n".join(column_summaries)
+
+    instructions = (
+        "\n\nYour job:\n"
+        "- Select which columns are relevant to the user task.\n"
+        "- Answer ONLY with a comma-separated list of column names, or 'ALL' if all are relevant.\n"
+        "- Never invent names; use only the listed ones.\n"
+        "- Do not drop sparse columns unless clearly irrelevant to the task.\n"
+        "- Constant columns are usually not relevant, unless explicitly asked.\n"
+        "- If the user task explicitly mentions a column, always include it.\n"
+    )
+
+    return header + cols_block + instructions
+
+
 def build_chat_prompt(user_prompt: str, summary: Optional[Mapping[str, Any]]) -> str:
     """
     Build a user-facing prompt that includes dataset context plus the user's request.
