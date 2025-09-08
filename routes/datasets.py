@@ -1,8 +1,8 @@
-from flask import Blueprint, render_template, current_app, request, redirect, url_for
-from sqlalchemy import text
+from flask import Blueprint, render_template, current_app, request, redirect, url_for, flash
 import os
 from helpers import load_csv_resilient, compute_generic_insights, analyze_and_store_columns
 from services import storage
+from repo import get_latest_dataset_file, get_dataset_columns
 
 datasets_bp = Blueprint("datasets", __name__)
 
@@ -14,8 +14,9 @@ def upload_dataset():
     if not file.filename.lower().endswith('.csv'):
         return render_template('index.html', error="Nur .csv-Dateien sind erlaubt.")
 
-    dataset_id = storage.save_uploaded_file(file, current_app.config["DB_ENGINE"])
-
+    dataset_id, is_new = storage.save_uploaded_file(file, current_app.config["DB_ENGINE"])
+    if not is_new:
+        flash("Diese Datei liegt bereits vor – vorhandenes Dataset wurde geöffnet.", "info")
     return redirect(url_for("datasets.analyze_dataset", dataset_id=dataset_id))
 
 
@@ -25,16 +26,7 @@ def analyze_dataset(dataset_id):
 
     # Metadaten zur archivierten Datei holen (inkl. original_name & file_hash)
     with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT file_path, encoding, delimiter, original_name, file_hash
-                FROM dataset_files
-                WHERE dataset_id = :id
-                """
-            ),
-            {"id": dataset_id},
-        ).mappings().first()
+        row = get_latest_dataset_file(conn, dataset_id)
 
     if not row:
         return f"Dataset {dataset_id} nicht gefunden.", 404
@@ -85,17 +77,7 @@ def analyze_dataset(dataset_id):
     }
 
     with engine.begin() as conn:
-        columns = conn.execute(
-            text(
-                """
-                 SELECT ordinal, name, dtype, is_nullable, distinct_count, min_val, max_val
-                 FROM dataset_columns
-                 WHERE dataset_id = :id
-                 ORDER BY ordinal
-                 """
-            ),
-            {"id": dataset_id},
-        ).mappings().all()
+        columns = get_dataset_columns(conn, dataset_id)
 
     ai_available = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI"))
     current_app.logger.debug("ai_available = %s", ai_available)

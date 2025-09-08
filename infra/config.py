@@ -37,4 +37,7 @@ def get_config() -> dict:
         "UPLOAD_FOLDER": os.getenv("UPLOAD_FOLDER", "data"),
         "API_KEY": os.getenv("API_KEY", ""),
         "SECRET_KEY": get_secret_key(),
+        "CONSENT_VERSION": int(os.getenv("CONSENT_VERSION", 1)),
+        "CONSENT_MAX_AGE_DAYS": int(os.getenv("CONSENT_MAX_AGE_DAYS", 7)),
+        "SESSION_PERMANENT": False,
     }

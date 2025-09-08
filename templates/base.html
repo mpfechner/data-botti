@@ -14,8 +14,38 @@
         </div>
     </header>
     <main>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-container">
+              {% for category, message in messages %}
+                <div class="flash flash-{{ category }}" role="alert">
+                  {{ message }}
+                  <span class="close-btn">×</span>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
         {% block content %}{% endblock %}
     </main>
     {% include 'partials/footer.html' ignore missing %}
+    <script>
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => {
+        document.querySelectorAll('.flash').forEach(el => {
+          el.style.transition = 'opacity 0.5s ease';
+          el.style.opacity = '0';
+          setTimeout(() => el.remove(), 500);
+        });
+      }, 5000);
+
+      // Manual close
+      document.addEventListener('click', e => {
+        if (e.target.classList.contains('close-btn')) {
+          const flash = e.target.closest('.flash');
+          if (flash) flash.remove();
+        }
+      });
+    </script>
 </body>
 </html>

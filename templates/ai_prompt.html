@@ -11,10 +11,11 @@
     <div style="margin-top:16px;">
       <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="display:inline;">
         <input type="hidden" name="consent" value="1">
-        <button type="submit" class="btn btn-primary">Ja, fortfahren</button>
+        <button type="submit" id="ai-optin-accept" class="btn btn-primary">Ja, fortfahren</button>
       </form>
       <a href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}" class="btn">Nein, zurück</a>
     </div>
+    <p style="margin-top:8px;font-size:0.9em;color:#555;">Hinweis: Die Einwilligung gilt für eine begrenzte Zeit und kann jederzeit widerrufen werden.</p>
   </div>
 </div>
 {% endif %}
@@ -105,6 +106,10 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 
 {% if ai_consent %}
+<form method="post" action="{{ url_for('assistant.revoke_ai_consent', dataset_id=dataset_id) }}" style="float:right; margin-top:8px;">
+  <button type="submit" class="btn btn-link" style="padding:0;">Einwilligung widerrufen</button>
+</form>
+<div style="clear:both;"></div>
 <h1>AI Assistant für {{ filename }}</h1>
 
 <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="margin-top:12px;">

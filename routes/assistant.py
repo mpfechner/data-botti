@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, current_app, session, redirect, url_for
 from services.ai_client import ask_model
 from services.ai_tasks import build_relevant_columns_prompt
-from sqlalchemy import text as _sql_text
+from repo import get_latest_dataset_file
 from helpers import (
     get_dataset_original_name,
     build_dataset_context,
@@ -9,8 +9,65 @@ from helpers import (
     summarize_columns_for_selection,
     build_cross_column_overview,
 )
+from datetime import datetime, timedelta, timezone
 
 assistant_bp = Blueprint("assistant", __name__)
+
+
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+def _get_consent_policy():
+    """Read consent policy from config with safe defaults.
+    CONSENT_VERSION: int (default 1)
+    CONSENT_MAX_AGE_DAYS: int or None (default 7)
+    """
+    cfg = current_app.config
+    version = int(cfg.get("CONSENT_VERSION", 1))
+    max_age_days = cfg.get("CONSENT_MAX_AGE_DAYS", 7)
+    try:
+        max_age_days = int(max_age_days) if max_age_days is not None else None
+    except Exception:
+        max_age_days = 7
+    return version, max_age_days
+
+def _has_valid_consent() -> bool:
+    """Server-side check: version + (optional) TTL."""
+    if not session.get("ai_consent"):
+        return False
+    try:
+        stored_version = int(session.get("consent_version", 0))
+    except Exception:
+        stored_version = 0
+    consent_time_raw = session.get("consent_time")
+    try:
+        consent_time = (
+            datetime.fromisoformat(consent_time_raw)
+            if isinstance(consent_time_raw, str)
+            else consent_time_raw
+        )
+    except Exception:
+        consent_time = None
+
+    policy_version, max_age_days = _get_consent_policy()
+    if stored_version != policy_version:
+        return False
+    if max_age_days is not None:
+        if consent_time is None:
+            return False
+        if _now_utc() - consent_time > timedelta(days=max_age_days):
+            return False
+    return True
+
+def _grant_consent():
+    policy_version, _ = _get_consent_policy()
+    session["ai_consent"] = True
+    session["consent_version"] = int(policy_version)
+    session["consent_time"] = _now_utc().isoformat()
+
+def _revoke_consent():
+    for k in ("ai_consent", "consent_version", "consent_time"):
+        session.pop(k, None)
 
 
 @assistant_bp.route("/ai/<int:dataset_id>", methods=["GET", "POST"])
@@ -18,22 +75,21 @@ def ai_prompt(dataset_id):
     engine = current_app.config["DB_ENGINE"]
     filename = get_dataset_original_name(engine, dataset_id)
 
-    ai_consent = bool(session.get("ai_consent", False))
+    # Strict, server-side consent validation (version + optional TTL)
+    ai_consent = _has_valid_consent()
+
+    # Handle POSTed consent action early
+    if request.method == "POST" and request.form.get("consent") == "1":
+        _grant_consent()
+        return redirect(url_for("assistant.ai_prompt", dataset_id=dataset_id))
+
+    # Gate both GET and POST if consent is not valid (no heavy work before consent)
+    if not ai_consent and request.method == "GET":
+        return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id, ai_consent=False)
 
     # Load dataset from latest stored file_path (gz CSV)
     with engine.begin() as conn:
-        meta = conn.execute(
-            _sql_text(
-                """
-                SELECT file_path, encoding, delimiter
-                FROM dataset_files
-                WHERE dataset_id = :id
-                ORDER BY id DESC
-                LIMIT 1
-                """
-            ),
-            {"id": int(dataset_id)},
-        ).mappings().first()
+        meta = get_latest_dataset_file(conn, dataset_id)
 
     if not meta:
         current_app.logger.error("No dataset_files meta for dataset_id=%s", dataset_id)
@@ -69,11 +125,8 @@ def ai_prompt(dataset_id):
     column_summaries = summarize_columns_for_selection(df)
 
     if request.method == "POST":
-        if request.form.get("consent") == "1":
-            session["ai_consent"] = True
-            return redirect(url_for("assistant.ai_prompt", dataset_id=dataset_id))
-
-        if not ai_consent:
+        # Defense-in-depth: block POST if consent is not valid
+        if not _has_valid_consent():
             return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id, ai_consent=False)
 
         prompt = request.form.get("prompt", "")
@@ -81,14 +134,16 @@ def ai_prompt(dataset_id):
         task = request.form.get("task", "").strip().lower()
         current_app.logger.debug("Task received: %s", task)
 
-        # Strenger System-Prompt
+        # Domain-neutral system prompt: do not assume data are sensors, finance, etc.
         system_prompt = (
-            "Du bist DataBotti, ein Assistent für die Analyse von Sensordaten (CSV). "
-            "Antworte ausschließlich anhand des bereitgestellten Datensatz-Kontexts (Spalten, Beispielzeilen, Statistiken). "
+            "Du bist DataBotti, ein Assistent für die Analyse von tabellarischen CSV-Daten. "
+            "Triff KEINE Annahmen über die Art der Daten (z. B. Sensordaten, Finanzdaten, Logdaten), "
+            "es sei denn, dies geht explizit und eindeutig aus dem bereitgestellten Kontext hervor. "
+            "Antworte ausschließlich anhand des Datensatz-Kontexts (Spalten, Beispielzeilen, Statistiken). "
             "Wenn der Kontext fehlt, sage das klar und liste knapp auf, was du brauchst. "
             "Erfinde keine Geschäftskennzahlen oder externen Fakten. "
-            "Benenne Unsicherheit ausdrücklich, wenn Evidenz im Kontext fehlt oder unklar ist (z.B. wenn keine Extremwerte oder Verteilungsdaten vorliegen). "
-            "Stütze Aussagen auf konkrete Zahlen aus dem Kontext (z.B. Min/Max, Quantile, Outlier-Anteile) und markiere Hypothesen als solche. "
+            "Benenne Unsicherheit ausdrücklich, wenn Evidenz im Kontext fehlt oder unklar ist (z. B. wenn keine Extremwerte oder Verteilungsdaten vorliegen). "
+            "Stütze Aussagen auf konkrete Zahlen aus dem Kontext (z. B. Min/Max, Quantile, Ausreißer-Anteile) und markiere Hypothesen als solche. "
             "Gib keine sensiblen oder externen Daten aus und lehne Spekulationen ohne Datengrundlage ab."
         )
 
@@ -250,3 +305,12 @@ def ai_prompt(dataset_id):
         )
 
     return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id, ai_consent=ai_consent)
+
+
+@assistant_bp.route("/ai/revoke", methods=["POST"])
+def revoke_ai_consent():
+    _revoke_consent()
+    ds_id = request.args.get("dataset_id", type=int)
+    if ds_id:
+        return redirect(url_for("assistant.ai_prompt", dataset_id=ds_id))
+    return redirect(url_for("datasets.index"))
