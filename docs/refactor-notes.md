@@ -84,7 +84,7 @@ Saubere Trennung von Schichten:
 - [x] Schritt 1: Struktur + Platzhalter (inkl. `dataset_service.py`, `ai_router.py`)
 - [x] Schritt 2: Blueprints registriert, App startet wie zuvor
 - [x] Schritt 3: `infra/config.py` & `infra/logging.py` eingebunden
-- [ ] Schritt 4: AI-Layer Inventur dokumentiert (`ai_tasks`/`ai_router`/`ai_client` Usage Map)
+- [x] Schritt 4: AI-Layer Inventur dokumentiert (`ai_tasks`/`ai_router`/`ai_client` Usage Map)
 
 ### Etappe 2 – Migration Endpoints & Services
 **Routes /assistant**
@@ -93,11 +93,10 @@ Saubere Trennung von Schichten:
 
 > Legacy-Route /ai-legacy/<id> entfernt, Endpunkt bleibt /ai/<id> (keine Breaking Changes).
 
-- [ ] (Legacy) `/ai-legacy/<id>`: Redirect oder entfernen
+- [x] (Legacy) `/ai-legacy/<id>`: Redirect oder entfernen
 
-**Routes /datasets**
-- [ ] `/analyze/dataset/<id>` GET: nutzt `dataset_service` + `insights`, rendert `result.html`
-- [ ] Upload POST (`/` oder `/upload`): Speichern via `storage.py`, Redirect auf Analyse
+- [x] `/analyze/dataset/<id>` GET: nutzt `dataset_service` + `insights`, rendert `result.html`
+- [x] Upload POST (`/` oder `/upload`): Speichern via `storage.py`, Redirect auf Analyse
 
 **Services**
 - [ ] `dataset_service`: `load_csv()` (Encoding/Dialekt), `summary()` (shape/columns/describe)
@@ -108,8 +107,8 @@ Saubere Trennung von Schichten:
 - [ ] `ai_router`: `choose_model()` Integration & Parametereingang prüfen
 
 **App Cleanup**
-- [ ] Alte AI/Analyse-Routen aus `app.py` entfernen
-- [ ] `app.py` enthält nur App-Start + Blueprint-Registrierung
+- [x] Alte AI/Analyse-Routen aus `app.py` entfernen
+- [x] `app.py` enthält nur App-Start + Blueprint-Registrierung
 
 **Templates/Static**
 - [x] Templates an neue Endpoints angepasst (`index.html`, `result.html`)
@@ -119,9 +118,9 @@ Saubere Trennung von Schichten:
 - [ ] Keine direkten `os.getenv` in Routes/Services (Ausnahme: `ai_client`, falls Key nicht via Config gereicht)
 
 **Manuelle Tests**
-- [ ] Upload → Analyse-Ansicht funktioniert (kleine CSV)
-- [ ] AI-Prompt → Antwort wird angezeigt
-- [ ] Logs landen in `logs/databotti.log` (Rotation aktiv)
+- [x] Upload → Analyse-Ansicht funktioniert (kleine CSV)
+- [x] AI-Prompt → Antwort wird angezeigt
+- [x] Logs landen in `logs/databotti.log` (Rotation aktiv)
 
 ### Etappe 3 – Feinschliff & Housekeeping
 - [ ] Unbenutzte Helpers entfernen/deprecaten

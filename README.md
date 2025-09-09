@@ -75,5 +75,9 @@ Then you can start the backend locally in PyCharm while the database runs in the
 ## Status & Roadmap
 - ✅ Basic functions running  
 - ✅ AI features integrated (OpenAI API)  
+- ✅ Logging with rotation in place  
+- ✅ Consent gating implemented (versioning, TTL-ready)  
+- ✅ Duplicate file handling with flash messages  
+- ✅ Refactored analyze route to service layer  
 - 🔄 Extension of AI functionality (robust stats, outlier detection, safety prompts)  
 - ⏳ Next milestone: user management and test coverage
