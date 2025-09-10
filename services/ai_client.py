@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 from typing import Optional, Dict, Any
+from infra.config import get_config
 
 import logging
 logger = logging.getLogger(__name__)
@@ -22,6 +23,12 @@ from .ai_router import choose_model  # local router deciding the cheapest suitab
 
 class AIClientNotConfigured(RuntimeError):
     """Raised when the AI client is not yet wired/configured (e.g., missing API key)."""
+
+
+def is_ai_available() -> bool:
+    """Return True if an AI provider is configured (API key present)."""
+    config = get_config()
+    return bool(config["OPENAI_API_KEY"] or config["OPENAI_API_KEY_BOTTI"])
 
 
 # Helper to estimate cache ratio (placeholder)
@@ -67,7 +74,8 @@ def ask_model(
         For provider-specific errors.
     """
     # Example: prefer OPENAI_* env vars; if none present, raise a clear error.
-    openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI")
+    config = get_config()
+    openai_key = config["OPENAI_API_KEY"] or config["OPENAI_API_KEY_BOTTI"]
 
     if not openai_key:
         raise AIClientNotConfigured(

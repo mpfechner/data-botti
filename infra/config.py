@@ -35,7 +35,8 @@ def get_config() -> dict:
     return {
         "DEBUG": os.getenv("DEBUG", "false").lower() == "true",
         "UPLOAD_FOLDER": os.getenv("UPLOAD_FOLDER", "data"),
-        "API_KEY": os.getenv("API_KEY", ""),
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
+        "OPENAI_API_KEY_BOTTI": os.getenv("OPENAI_API_KEY_BOTTI", ""),
         "SECRET_KEY": get_secret_key(),
         "CONSENT_VERSION": int(os.getenv("CONSENT_VERSION", 1)),
         "CONSENT_MAX_AGE_DAYS": int(os.getenv("CONSENT_MAX_AGE_DAYS", 7)),

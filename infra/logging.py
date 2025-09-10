@@ -53,7 +53,9 @@ def setup_app_logging(app) -> None:
     log_path = os.path.join(log_dir, "databotti.log")
 
     level = _get_level_from_env(logging.DEBUG)
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     app.logger.setLevel(level)
+    app.logger.propagate = False
 
     # Avoid duplicate handlers
     need_handler = True
@@ -68,7 +70,25 @@ def setup_app_logging(app) -> None:
 
     if need_handler:
         fh = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
-        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
         fh.setFormatter(fmt)
         fh.setLevel(level)
         app.logger.addHandler(fh)
+
+    # Route non-app loggers to the same file, silence default console output
+    root = logging.getLogger()
+    # Remove default StreamHandler(s) that print to CLI
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    root.setLevel(level)
+    # Attach rotating file handler to root as well
+    root_fh = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    root_fh.setFormatter(fmt)
+    root_fh.setLevel(level)
+    root.addHandler(root_fh)
+
+    # Reduce noisy werkzeug logs to WARNING and prevent propagation to console
+    wlog = logging.getLogger("werkzeug")
+    for h in list(wlog.handlers):
+        wlog.removeHandler(h)
+    wlog.setLevel(logging.WARNING)
+    wlog.propagate = False

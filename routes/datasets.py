@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, current_app, request, redirect, ur
 import os
 from services import storage
 from services.dataset_service import analyze_dataset as analyze_dataset_service
+from services.ai_client import is_ai_available
 
 datasets_bp = Blueprint("datasets", __name__)
 
@@ -25,7 +26,7 @@ def analyze_dataset(dataset_id):
 
     summary, columns = analyze_dataset_service(engine, dataset_id)
 
-    ai_available = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI"))
+    ai_available = is_ai_available()
     current_app.logger.debug("ai_available = %s", ai_available)
     try:
         current_app.logger.debug("Dataset %s: shape=%s", dataset_id, summary.get("shape"))
