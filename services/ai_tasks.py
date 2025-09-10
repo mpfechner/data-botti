@@ -62,6 +62,58 @@ def build_dataset_summary_prompt(summary: Optional[Mapping[str, Any]]) -> str:
     )
 
 
+def build_system_prompt() -> str:
+    """Return the domain-neutral system prompt for DataBotti."""
+    return (
+        "Du bist DataBotti, ein Assistent für die Analyse von tabellarischen CSV-Daten. "
+        "Triff KEINE Annahmen über die Art der Daten (z. B. Sensordaten, Finanzdaten, Logdaten), "
+        "es sei denn, dies geht explizit und eindeutig aus dem bereitgestellten Kontext hervor. "
+        "Antworte ausschließlich anhand des Datensatz-Kontexts (Spalten, Beispielzeilen, Statistiken). "
+        "Wenn der Kontext fehlt, sage das klar und liste knapp auf, was du brauchst. "
+        "Erfinde keine Geschäftskennzahlen oder externen Fakten. "
+        "Benenne Unsicherheit ausdrücklich, wenn Evidenz im Kontext fehlt oder unklar ist "
+        "(z. B. wenn keine Extremwerte oder Verteilungsdaten vorliegen). "
+        "Stütze Aussagen auf konkrete Zahlen aus dem Kontext (z. B. Min/Max, Quantile, Ausreißer-Anteile) "
+        "und markiere Hypothesen als solche. "
+        "Gib keine sensiblen oder externen Daten aus und lehne Spekulationen ohne Datengrundlage ab."
+    )
+
+
+def select_relevant_columns(df, model_response: str, task: str, rows: int, cols: int, column_summaries: list[str]) -> list[str]:
+    """Parse model response for relevant columns and adjust based on task-specific rules."""
+    txt = (model_response or "").strip()
+    if txt.upper() == "ALL":
+        selected_cols = list(df.columns)
+    else:
+        selected_cols = [t.strip() for t in txt.split(",") if t.strip() in df.columns]
+
+    def _ensure(cols: list[str]):
+        for c in cols:
+            if c in df.columns and c not in selected_cols:
+                selected_cols.append(c)
+
+    # Task-based adjustments
+    if task in ("outliers", "time_trends", "basic_stats") and len(df.columns) > 0:
+        _ensure([df.columns[0]])
+    if task in ("correlation", "distribution") and len(df.columns) > 1:
+        _ensure(df.columns.tolist()[:2])
+
+    return selected_cols
+
+
+def build_final_prompt(user_prompt: str, selected_cols: list[str], task: str,
+                       context: str, cross_overview: str, corr_block: str) -> str:
+    """Build the final stage-2 AI prompt from provided building blocks."""
+    return (
+        f"User request: {user_prompt}\n\n"
+        f"Task: {task}\n\n"
+        f"Selected columns: {', '.join(selected_cols)}\n\n"
+        f"Context:\n{context}\n\n"
+        f"Cross overview:\n{cross_overview}\n\n"
+        f"Correlation block:\n{corr_block}\n"
+    )
+
+
 # ---- Stage-1 column selection prompt builder --------------------------------
 
 def build_relevant_columns_prompt(user_task: str, rows: int, cols: int, column_summaries: list[str]) -> str:

@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, current_app, session, redirect, url_for
 from services.ai_client import ask_model
 from services.ai_tasks import build_relevant_columns_prompt
+from services.ai_tasks import build_system_prompt, select_relevant_columns, build_final_prompt
 from repo import get_latest_dataset_file
 from helpers import (
     get_dataset_original_name,
@@ -10,6 +11,7 @@ from helpers import (
     build_cross_column_overview,
 )
 from datetime import datetime, timedelta, timezone
+import pandas as _pd
 
 assistant_bp = Blueprint("assistant", __name__)
 
@@ -135,96 +137,29 @@ def ai_prompt(dataset_id):
         current_app.logger.debug("Task received: %s", task)
 
         # Domain-neutral system prompt: do not assume data are sensors, finance, etc.
-        system_prompt = (
-            "Du bist DataBotti, ein Assistent für die Analyse von tabellarischen CSV-Daten. "
-            "Triff KEINE Annahmen über die Art der Daten (z. B. Sensordaten, Finanzdaten, Logdaten), "
-            "es sei denn, dies geht explizit und eindeutig aus dem bereitgestellten Kontext hervor. "
-            "Antworte ausschließlich anhand des Datensatz-Kontexts (Spalten, Beispielzeilen, Statistiken). "
-            "Wenn der Kontext fehlt, sage das klar und liste knapp auf, was du brauchst. "
-            "Erfinde keine Geschäftskennzahlen oder externen Fakten. "
-            "Benenne Unsicherheit ausdrücklich, wenn Evidenz im Kontext fehlt oder unklar ist (z. B. wenn keine Extremwerte oder Verteilungsdaten vorliegen). "
-            "Stütze Aussagen auf konkrete Zahlen aus dem Kontext (z. B. Min/Max, Quantile, Ausreißer-Anteile) und markiere Hypothesen als solche. "
-            "Gib keine sensiblen oder externen Daten aus und lehne Spekulationen ohne Datengrundlage ab."
-        )
+        system_prompt = build_system_prompt()
 
         selection_prompt = build_relevant_columns_prompt(prompt, rows, cols, column_summaries)
         selection_result = ask_model(selection_prompt, expected_output="short", context_id=f"{dataset_id}_colsel")
-        # Parse result
-        raw_selected: list[str] = []
-        if selection_result:
-            txt = selection_result.strip()
-            if txt.upper() == "ALL":
-                raw_selected = list(df.columns)
-            else:
-                raw_selected = [c.strip() for c in txt.split(",") if c.strip()]
 
-        # Harden: allow only existing cols, drop dups, preserve order
-        seen = set()
-        selected_cols = []
-        for c in raw_selected:
-            if c in df.columns and c not in seen:
-                seen.add(c)
-                selected_cols.append(c)
+        selected_cols = select_relevant_columns(
+            df,
+            selection_result or "",
+            task,
+            rows,
+            cols,
+            column_summaries,
+        )
 
-        # Force-include: columns explicitly mentioned in the user's prompt text
+        # Force-include: columns explicitly mentioned in the user's prompt text (preserve existing behavior)
         prompt_l = prompt.lower()
-        force_include = [c for c in df.columns if c.lower() in prompt_l]
-        for c in force_include:
-            if c not in seen:
-                seen.add(c)
-                selected_cols.append(c)
-
-        # Task-based overrides / expansions
-        import pandas as _pd
-        num_cols = list(df.select_dtypes(include=["number"]).columns)
-        cat_cols = list(df.select_dtypes(include=["object", "string", "category"]).columns)
-        # datetime heuristic: try parse a small sample
-        dt_cols: list[str] = []
         for c in df.columns:
-            try:
-                s = _pd.to_datetime(df[c], errors="coerce", utc=False)
-                if s.notna().mean() > 0.5:
-                    dt_cols.append(c)
-            except Exception:
-                continue
-
-        def _ensure(cols: list[str]):
-            for c in cols:
-                if c in df.columns and c not in seen:
-                    seen.add(c)
-                    selected_cols.append(c)
-
-        if task in {"summary", "quality", "correlations"}:
-            # Für generische Aufgaben: mit ALL arbeiten
-            selected_cols = list(df.columns)
-            seen = set(selected_cols)
-        elif task == "outliers":
-            # Numerische Spalten sind relevant
-            _ensure(num_cols)
-        elif task == "categories":
-            # Kategoriale Spalten sicherstellen
-            _ensure(cat_cols)
-        elif task == "time_trends":
-            # Datums- + numerische Spalten
-            _ensure(dt_cols + num_cols)
-        elif task == "duplicates":
-            # Für Eindeutigkeit/Duplikate: alle Spalten prüfen
-            selected_cols = list(df.columns)
-            seen = set(selected_cols)
-        elif task == "segments":
-            # Segmentvergleich: mindestens eine Kategorie + numerische
-            if not any(c in selected_cols for c in cat_cols):
-                _ensure(cat_cols[:1])
-            _ensure(num_cols)
-
-        # Fallback, falls leer
-        if not selected_cols:
-            selected_cols = list(df.columns)
-            seen = set(selected_cols)
+            if c.lower() in prompt_l and c not in selected_cols:
+                selected_cols.append(c)
 
         current_app.logger.debug(
-            "Stage-1 selected columns: %s | force_include=%s | task=%s",
-            selected_cols, force_include, task,
+            "Stage-1 selected columns: %s | task=%s",
+            selected_cols, task,
         )
 
         # Cross-column overview always over FULL dataset for global context
@@ -267,28 +202,15 @@ def ai_prompt(dataset_id):
         # Build context for Stage-2 with the selected columns
         context = build_dataset_context(engine, dataset_id, n_rows=5, include_columns=selected_cols)
 
-        # Enforce coverage: if ALL columns were selected, say so explicitly; otherwise require covering all selected columns
-        all_selected = len(selected_cols) == len(df.columns)
-        if all_selected:
-            coverage_note = (
-                "Wichtiger Hinweis: Die Spaltenauswahl (Stufe 1) hat ALLE Spalten als relevant markiert. "
-                "Analysiere daher den vollständigen Spaltensatz. Beziehe deine Aussagen auf alle Spalten. "
-                "Wenn du gruppierst oder bündelst, kennzeichne das ausdrücklich."
-            )
-        else:
-            coverage_note = (
-                "Wichtiger Hinweis: Beziehe deine Analyse auf ALLE ausgewählten Spalten (nicht nur eine Teilmenge). "
-                "Wenn du zur Übersicht gruppierst oder bündelst, erwähne das ausdrücklich."
-            )
-
-        final_prompt = (
-            f"{context}\n\n"
-            f"### Cross-Column Overview\n{cross_overview}\n\n"
-            f"{corr_block}\n\n"
-            f"### Aufgabe\n{prompt}\n\n"
-            f"### Pflichtenheft\n{coverage_note}"
+        # Build final Stage-2 prompt from blocks
+        final_prompt = build_final_prompt(
+            user_prompt=prompt,
+            selected_cols=selected_cols,
+            task=task,
+            context=context,
+            cross_overview=cross_overview,
+            corr_block=corr_block,
         )
-        current_app.logger.debug("Stage-2 columns used: %s of %s (all_selected=%s)", len(selected_cols), len(df.columns), all_selected)
 
         result = ask_model(
             final_prompt,
