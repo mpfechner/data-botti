@@ -1,4 +1,4 @@
-import hashlib, gzip, io, os
+import gzip
 from sqlalchemy import text
 import pandas as pd
 import re
@@ -86,21 +86,6 @@ def _looks_like_datetime(series: pd.Series) -> bool:
     share = sample.apply(looks_token).mean()
     return share >= 0.5
 
-def sha256_bytesio(bio: io.BytesIO) -> str:
-    bio.seek(0)
-    h = hashlib.sha256()
-    for chunk in iter(lambda: bio.read(1024 * 1024), b""):
-        h.update(chunk)
-    bio.seek(0)
-    return h.hexdigest()
-
-def save_gzip_to_data(bio: io.BytesIO, hexhash: str, data_dir: str = "data") -> str:
-    bio.seek(0)
-    out_path = os.path.join(data_dir, f"{hexhash}.csv.gz")
-    with gzip.open(out_path, "wb") as gz:
-        for chunk in iter(lambda: bio.read(1024 * 1024), b""):
-            gz.write(chunk)
-    return out_path
 
 def insert_dataset_and_file(engine, user_id: int, filename: str, file_info: dict) -> int:
     """Legt Dataset + Datei an. Bei bereits vorhandenem file_hash wird der bestehende dataset_id zurückgegeben."""
@@ -347,28 +332,6 @@ def load_csv_resilient(file_path: str, preferred_encoding: str | None = None, pr
         return df, used_enc, used_delim
 
     raise RuntimeError(f"CSV konnte nicht gelesen werden. Letzter Fehler: {last_err}")
-
-
-def get_or_create_default_user(engine) -> int:
-    """Gibt eine gültige users.id zurück; legt bei Bedarf einen Default-User an.
-    Erwartete Tabellenspalten: id (PK, auto_inc), username (TEXT), email (TEXT).
-    """
-    with engine.begin() as conn:
-        uid = conn.execute(text("SELECT id FROM users ORDER BY id LIMIT 1")).scalar()
-        if uid:
-            return int(uid)
-
-        res = conn.execute(
-            text("""
-                INSERT INTO users (username, email)
-                VALUES (:u, :e)
-            """),
-            {"u": "databotti_default", "e": "default@example.com"}
-        )
-        new_id = getattr(res, "lastrowid", None)
-        if new_id is None:
-            new_id = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
-        return int(new_id)
 
 
 def summarize_columns_for_selection(df: pd.DataFrame) -> list[str]:
