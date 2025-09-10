@@ -1,6 +1,7 @@
 import os
-from helpers import load_csv_resilient, compute_generic_insights, analyze_and_store_columns
+from helpers import load_csv_resilient, analyze_and_store_columns
 from repo import get_latest_dataset_file, get_dataset_columns
+from services.insights import compute_generic_insights
 
 
 def analyze_dataset(engine, dataset_id):
