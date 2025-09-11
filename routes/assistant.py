@@ -257,11 +257,19 @@ def ai_prompt(dataset_id):
             corr_block=corr_block,
         )
 
-        # Choose model via router (logs only for now; ai_client will be switched next)
-        model = choose_model(expected_output=expected_output, cache_ratio=None)
-        current_app.logger.info(
-            "AI model chosen: %s (expected_output=%s)", model, expected_output
-        )
+        # User override: allow forcing SMART model via checkbox
+        force_smart = request.form.get("force_smart") == "1"
+        if force_smart:
+            from services.ai_router import MODEL_SMART
+            model = MODEL_SMART
+            current_app.logger.info(
+                "AI model chosen (user-forced SMART): %s (expected_output=%s)", model, expected_output
+            )
+        else:
+            model = choose_model(expected_output=expected_output, cache_ratio=None)
+            current_app.logger.info(
+                "AI model chosen: %s (expected_output=%s)", model, expected_output
+            )
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": final_prompt},

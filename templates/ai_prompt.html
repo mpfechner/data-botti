@@ -126,6 +126,12 @@ document.addEventListener("DOMContentLoaded", function() {
     <button type="button" class="btn btn-secondary" id="btn-fn-segments">Segmentvergleich</button>
   </div>
   <textarea name="prompt" rows="6" style="width:100%;" placeholder="Frag die KI z. B.: Fasse die wichtigsten Trends zusammen …"></textarea>
+  <div class="force-smart" style="margin:12px 0; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc;">
+    <label for="force_smart" style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer;">
+      <input type="checkbox" id="force_smart" name="force_smart" value="1">
+      <span>Höchste Qualität bevorzugen (GPT‑5‑mini) — dies führt wahrscheinlich zu höheren Kosten</span>
+    </label>
+  </div>
   <div style="margin-top:8px;">
     <button type="submit" class="btn btn-primary">Ask AI</button>
     <a class="btn" href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}">Zurück</a>
