@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, current_app, session, redirect, url_for
-from services.ai_client import ask_model
+from services.ai_client import ask_model, call_model
+from services.ai_router import choose_model
 from services.ai_tasks import build_relevant_columns_prompt
 from services.ai_tasks import build_system_prompt, select_relevant_columns, build_final_prompt
 from repo import get_latest_dataset_file
@@ -136,11 +137,55 @@ def ai_prompt(dataset_id):
         task = request.form.get("task", "").strip().lower()
         current_app.logger.debug("Task received: %s", task)
 
+        # Auto-infer expected_output for free prompts (no button/task) in a robust way
+        try:
+            eo_raw = (expected_output or "medium").strip().lower()
+            # Only override when user likely typed a free prompt (no task button) and EO is default 'medium'
+            if (not task) and eo_raw == "medium":
+                txt = (prompt or "").lower()
+                L = len(txt)
+                # Length-based baseline
+                if L < 120:
+                    inferred = "short"
+                elif L > 300:
+                    inferred = "long"
+                else:
+                    inferred = "medium"
+
+                # Keyword nudges (de/en)
+                short_kw = ("kurz", "knapp", "bullet", "liste", "tl;dr")
+                long_kw  = ("ausführlich", "detailliert", "begründe", "erkläre", "warum", "strategie", "management-zusammenfassung")
+                if any(k in txt for k in long_kw):
+                    inferred = "long"
+                elif any(k in txt for k in short_kw):
+                    inferred = "short"
+
+                # Dataset size as corrective: many cols or very large rows -> bump one level up
+                def _bump(eo: str) -> str:
+                    return "medium" if eo == "short" else ("long" if eo == "medium" else "long")
+
+                try:
+                    _rows, _cols = int(rows), int(cols)
+                except Exception:
+                    _rows, _cols = 0, 0
+
+                if _cols >= 20 or _rows >= 100_000:
+                    inferred = _bump(inferred)
+
+                expected_output = inferred
+                current_app.logger.info(
+                    "Auto-inferred expected_output=%s (len=%s, rows=%s, cols=%s)", inferred, L, _rows, _cols
+                )
+        except Exception:
+            # Be conservative: keep original expected_output on any error
+            pass
+
         # Domain-neutral system prompt: do not assume data are sensors, finance, etc.
         system_prompt = build_system_prompt()
 
         selection_prompt = build_relevant_columns_prompt(prompt, rows, cols, column_summaries)
-        selection_result = ask_model(selection_prompt, expected_output="short", context_id=f"{dataset_id}_colsel")
+        from services.ai_router import MODEL_FAST
+        selection_result = ask_model(selection_prompt, expected_output="short", context_id=f"{dataset_id}_colsel", model=MODEL_FAST)
 
         selected_cols = select_relevant_columns(
             df,
@@ -212,12 +257,25 @@ def ai_prompt(dataset_id):
             corr_block=corr_block,
         )
 
-        result = ask_model(
-            final_prompt,
-            expected_output=expected_output,
-            context_id=dataset_id,
-            system_prompt=system_prompt,
+        # Choose model via router (logs only for now; ai_client will be switched next)
+        model = choose_model(expected_output=expected_output, cache_ratio=None)
+        current_app.logger.info(
+            "AI model chosen: %s (expected_output=%s)", model, expected_output
         )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": final_prompt},
+        ]
+        # Token budget: larger for GPT‑5 family to avoid empty outputs after reasoning
+        if str(model).startswith("gpt-5"):
+            _mt_map = {"short": 2000, "medium": 4000, "long": 8000}
+        else:
+            _mt_map = {"short": 400, "medium": 900, "long": 2000}
+        _eo = (expected_output or "medium").lower()
+        max_tokens = _mt_map.get(_eo, 900)
+        current_app.logger.info("Token budget: model=%s eo=%s max_tokens=%s", model, _eo, max_tokens)
+
+        result = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=0.2)
         return render_template(
             "ai_result.html",
             result=result,
