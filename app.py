@@ -1,246 +1,43 @@
 # DataBotti – Webapp zur Analyse von CSV-Dateien
 # Webapp zur Analyse von CSV-Dateien, mit visuellen Auswertungen und Berichtsexport
 
-# --- AI modules (modular) ------------------------------------------------------
-try:
-    from services.ai_client import ask_model  # Low-level API call wrapper
-except Exception:
-    def ask_model(prompt: str, **kwargs):
-        return "(AI placeholder) AI client not wired."
 
-try:
-    from services.ai_tasks import build_chat_prompt  # High-level prompt builder
-except Exception:
-    def build_chat_prompt(user_prompt, summary=None):
-        up = (user_prompt or "").strip()
-        return f"You are a helpful data assistant.\n\nUser request:\n{up}"
-# -----------------------------------------------------------------------------
-
-
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template
 import os
-import pandas as pd
-import hashlib
-import gzip
-import io
 from dotenv import load_dotenv
-from sqlalchemy import text
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-import matplotlib.pyplot as plt
-from helpers import sha256_bytesio, save_gzip_to_data, insert_dataset_and_file, analyze_and_store_columns, load_csv_resilient, get_or_create_default_user, compute_generic_insights, get_dataset_original_name, build_dataset_context
-import logging
-from logging.handlers import RotatingFileHandler
+from db import init_engine
+from routes.datasets import datasets_bp
+from routes.assistant import assistant_bp
+from infra.config import get_config
+from infra.logging import setup_app_logging
+
+# Load environment variables early so infra.config sees them
+load_dotenv()
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
+setup_app_logging(app)
 
-# --- Logging configuration ---------------------------------------------------
-# Configure a rotating file handler for logs
-_root_logger = logging.getLogger()
-_root_logger.setLevel(logging.DEBUG)
+# Blueprints an die App „andocken“
+app.register_blueprint(datasets_bp)
+app.register_blueprint(assistant_bp)
 
-_log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-_file_handler = RotatingFileHandler('databotti.log', maxBytes=1_000_000, backupCount=3)
-_file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(_log_formatter)
+# Apply config
+app.config.update(get_config())
 
-# Avoid adding duplicate handlers if app is reloaded
-if not any(isinstance(h, RotatingFileHandler) and getattr(h, 'baseFilename', '').endswith('databotti.log') for h in _root_logger.handlers):
-    _root_logger.addHandler(_file_handler)
-
-# Route Flask's app.logger through the same handlers
-app.logger.handlers = _root_logger.handlers
-app.logger.setLevel(logging.DEBUG)
-# ---------------------------------------------------------------------------
+# Setup logger
+app.logger.info("Starting DataBotti application")
 
 
 # Stelle sicher, dass der Upload-Ordner existiert
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 
-# .env Variablen laden
-load_dotenv()
+app.config['DB_ENGINE'] = init_engine()
 
 
-# SQLAlchemy Engine erstellen
-user = os.getenv("MYSQL_USER")
-pwd  = os.getenv("MYSQL_PASSWORD")
-db   = os.getenv("MYSQL_DATABASE")
-host = os.getenv("MYSQL_HOST", "127.0.0.1")
-port = os.getenv("MYSQL_PORT", "3306")
-
-engine = create_engine(
-    f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}",
-    pool_pre_ping=True,         # prüft Connection vor Nutzung → verhindert 2013-Fehler
-)
-
-
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/', methods=['GET'])
 def index():
-    if request.method == 'POST':
-        file = request.files.get('file')
-        if not file or file.filename == '':
-            return render_template('index.html', error="Bitte eine CSV-Datei auswählen.")
-        if not file.filename.lower().endswith('.csv'):
-            return render_template('index.html', error="Nur .csv-Dateien sind erlaubt.")
-
-        # CSV in Memory lesen
-        buf = io.BytesIO(file.read())
-        size_bytes = buf.getbuffer().nbytes
-
-        # Hash berechnen
-        hexhash = sha256_bytesio(buf)
-
-        # Vorerst feste Defaults (Auto-Detect machen wir später)
-        encoding = "utf-8"
-        delimiter = ","
-
-        # Archiv speichern: data/<hash>.csv.gz
-        os.makedirs("data", exist_ok=True)
-        file_path = save_gzip_to_data(buf, hexhash, data_dir="data")
-
-        # DB: datasets + dataset_files
-        file_info = {
-            "original_name": file.filename,
-            "size_bytes": size_bytes,
-            "file_hash": hexhash,
-            "encoding": encoding,
-            "delimiter": delimiter,
-            "file_path": file_path
-        }
-        dataset_id = insert_dataset_and_file(
-            engine,
-            user_id=get_or_create_default_user(engine),  # TODO: echten User verwenden
-            filename=file.filename,  # <-- vorher: name=...
-            file_info=file_info
-        )
-
-        # Weiter zur Analyse über dataset_id
-        return redirect(url_for('analyze_dataset', dataset_id=dataset_id))
-
     return render_template('index.html')
-
-
-@app.route('/analyze/dataset/<int:dataset_id>')
-def analyze_dataset(dataset_id):
-    # Metadaten zur archivierten Datei holen (inkl. original_name & file_hash)
-    with engine.begin() as conn:
-        row = conn.execute(
-            text("""
-                SELECT file_path, encoding, delimiter, original_name, file_hash
-                FROM dataset_files
-                WHERE dataset_id = :id
-            """),
-            {"id": dataset_id}
-        ).mappings().first()
-
-    if not row:
-        return f"Dataset {dataset_id} nicht gefunden.", 404
-
-    file_path = row["file_path"]
-    encoding = row["encoding"] or "utf-8"
-    delimiter = row["delimiter"] or ","
-
-    # CSV robust einlesen
-    try:
-        df, used_encoding, used_delimiter = load_csv_resilient(
-            file_path,
-            preferred_encoding=encoding,
-            preferred_delimiter=delimiter,
-        )
-    except Exception as e:
-        return f"Datei konnte nicht robust eingelesen werden: {e}", 400
-
-    # Hinweise/Warnungen für den User
-    warnings = []
-    if hasattr(df, "attrs") and df.attrs.get("header_detected") is False:
-        warnings.append(
-            "Kein Header erkannt – Spalten wurden generisch benannt (col_0, col_1, …). Einige Auswertungen sind ggf. eingeschränkt.")
-    if used_delimiter == ";":
-        warnings.append("Semikolon als Trennzeichen erkannt (Excel-CSV).")
-
-    # Generische Auto-Insights
-    insights = compute_generic_insights(df)
-    if isinstance(insights, dict) and insights.get("warnings"):
-        warnings.extend(insights["warnings"])
-
-    # Spaltenanalyse berechnen und in DB schreiben
-    analyze_and_store_columns(engine, dataset_id, df)
-
-    summary = {
-        # Anzeige: Originaldatei + Zusatz
-        "filename": row["original_name"],                 # sichtbarer Name
-        "stored_filename": os.path.basename(file_path),   # interner (hash) Dateiname
-        "file_hash": row["file_hash"],
-        "warnings": warnings,
-        "shape": df.shape,
-        "encoding_used": used_encoding,
-        "delimiter_used": used_delimiter,
-        "columns": df.columns.tolist(),
-        "head": df.head(10).to_html(classes="table table-striped", border=0),
-        "description": df.describe(include="all").to_html(classes="table table-bordered", border=0),
-        "insights": insights,
-    }
-
-    with engine.begin() as conn:
-        columns = conn.execute(
-            text("""
-                 SELECT ordinal, name, dtype, is_nullable, distinct_count, min_val, max_val
-                 FROM dataset_columns
-                 WHERE dataset_id = :id
-                 ORDER BY ordinal
-                 """),
-            {"id": dataset_id}
-        ).mappings().all()
-
-    ai_available = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_BOTTI"))
-    app.logger.debug("ai_available = %s", ai_available)
-    return render_template("result.html", summary=summary, columns=columns, dataset_id=dataset_id, ai_available=ai_available)
-
-
-# --- AI Assistant route --------------------------------------------------------
-@app.route('/ai-legacy/<int:dataset_id>', methods=['GET', 'POST'])
-def ai_assist(dataset_id):
-    """Legacy AI assistant route – redirect to the new route to avoid duplication."""
-    return redirect(url_for('ai_prompt', dataset_id=dataset_id))
-
-
-@app.route('/ai/<int:dataset_id>', methods=['GET', 'POST'])
-def ai_prompt(dataset_id):
-    filename = get_dataset_original_name(engine, dataset_id)
-    if request.method == "POST":
-        prompt = request.form.get("prompt", "")
-        expected_output = request.form.get("expected_output", "medium")
-
-        # Strenger System-Prompt: bleib bei Sensordaten, keine externen Fakten erfinden
-        system_prompt = (
-            "Du bist DataBotti, ein Assistent für die Analyse von Sensordaten (CSV). "
-            "Antworte ausschließlich anhand des bereitgestellten Datensatz-Kontexts (Spalten, Beispielzeilen, Statistiken). "
-            "Wenn der Kontext fehlt, sage das klar und liste knapp auf, was du brauchst. "
-            "Erfinde keine Geschäftskennzahlen oder externen Fakten. "
-            "Benenne Unsicherheit ausdrücklich, wenn Evidenz im Kontext fehlt oder unklar ist (z.B. wenn keine Extremwerte oder Verteilungsdaten vorliegen). "
-            "Stütze Aussagen auf konkrete Zahlen aus dem Kontext (z.B. Min/Max, Quantile, Outlier-Anteile) und markiere Hypothesen als solche. "
-            "Gib keine sensiblen oder externen Daten aus und lehne Spekulationen ohne Datengrundlage ab."
-        )
-
-        context = build_dataset_context(engine, dataset_id, n_rows=5, max_cols=12)
-        final_prompt = f"{context}\n\n### Aufgabe\n{prompt}"
-
-        result = ask_model(
-            final_prompt,
-            expected_output=expected_output,
-            context_id=dataset_id,
-            system_prompt=system_prompt,
-        )
-        return render_template(
-            "ai_result.html",
-            result=result,
-            filename=filename,
-            dataset_id=dataset_id,
-            prompt=prompt,
-        )
-    return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id)
 
 
 @app.route("/privacy")

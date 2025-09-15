@@ -9,7 +9,7 @@
             <p>Please upload a CSV file for analysis:</p>
         </div>
 
-        <form action="/" method="post" enctype="multipart/form-data" class="upload-form">
+        <form action="{{ url_for('datasets.upload_dataset') }}" method="post" enctype="multipart/form-data" class="upload-form">
             <div>
                 <input type="file" name="file" accept=".csv" required class="styled-input">
             </div>

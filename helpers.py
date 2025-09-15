@@ -1,4 +1,4 @@
-import hashlib, gzip, io, os
+import gzip
 from sqlalchemy import text
 import pandas as pd
 import re
@@ -86,21 +86,6 @@ def _looks_like_datetime(series: pd.Series) -> bool:
     share = sample.apply(looks_token).mean()
     return share >= 0.5
 
-def sha256_bytesio(bio: io.BytesIO) -> str:
-    bio.seek(0)
-    h = hashlib.sha256()
-    for chunk in iter(lambda: bio.read(1024 * 1024), b""):
-        h.update(chunk)
-    bio.seek(0)
-    return h.hexdigest()
-
-def save_gzip_to_data(bio: io.BytesIO, hexhash: str, data_dir: str = "data") -> str:
-    bio.seek(0)
-    out_path = os.path.join(data_dir, f"{hexhash}.csv.gz")
-    with gzip.open(out_path, "wb") as gz:
-        for chunk in iter(lambda: bio.read(1024 * 1024), b""):
-            gz.write(chunk)
-    return out_path
 
 def insert_dataset_and_file(engine, user_id: int, filename: str, file_info: dict) -> int:
     """Legt Dataset + Datei an. Bei bereits vorhandenem file_hash wird der bestehende dataset_id zurückgegeben."""
@@ -349,112 +334,200 @@ def load_csv_resilient(file_path: str, preferred_encoding: str | None = None, pr
     raise RuntimeError(f"CSV konnte nicht gelesen werden. Letzter Fehler: {last_err}")
 
 
-def get_or_create_default_user(engine) -> int:
-    """Gibt eine gültige users.id zurück; legt bei Bedarf einen Default-User an.
-    Erwartete Tabellenspalten: id (PK, auto_inc), username (TEXT), email (TEXT).
+def summarize_columns_for_selection(df: pd.DataFrame) -> list[str]:
+    """Return ultra-compact per-column summaries for Stage-1 column selection.
+    Each line is machine-friendly and type-aware.
     """
-    with engine.begin() as conn:
-        uid = conn.execute(text("SELECT id FROM users ORDER BY id LIMIT 1")).scalar()
-        if uid:
-            return int(uid)
+    lines: list[str] = []
+    n_rows = len(df)
 
-        res = conn.execute(
-            text("""
-                INSERT INTO users (username, email)
-                VALUES (:u, :e)
-            """),
-            {"u": "databotti_default", "e": "default@example.com"}
+    for col in df.columns:
+        s = df[col]
+        nonnull = int(s.notna().sum())
+        missing_pct = float((1 - (nonnull / max(1, n_rows))) * 100)
+        unique = int(s.nunique(dropna=True))
+
+        flags: list[str] = []
+        # looks like ID: name heuristic or all values unique
+        name_low = str(col).lower()
+        if unique == n_rows or any(tok in name_low for tok in ("id", "uuid", "guid")):
+            flags.append("looks_id")
+        if unique == 1:
+            flags.append("constant")
+        if missing_pct >= 90.0:
+            flags.append("sparse")
+
+        # detect dtype categories
+        col_type = "other"
+        extra = ""
+        try:
+            if pd.api.types.is_numeric_dtype(s):
+                col_type = "numeric"
+                s_num = pd.to_numeric(s, errors="coerce")
+                if s_num.notna().any():
+                    q50 = s_num.quantile(0.5)
+                    mn = s_num.min()
+                    mx = s_num.max()
+                    sd = s_num.std() if s_num.count() > 1 else None
+                    extra = f" | min={float(mn):.4g} | p50={float(q50):.4g} | max={float(mx):.4g}" + (f" | std={float(sd):.4g}" if sd is not None else "")
+            else:
+                # datetime heuristic
+                if _looks_like_datetime(s):
+                    parsed = _parse_datetime_series(s)
+                    if parsed.notna().mean() > 0.5:
+                        col_type = "datetime"
+                        try:
+                            extra = f" | min={str(parsed.min())} | max={str(parsed.max())}"
+                        except Exception:
+                            pass
+                if col_type == "other":
+                    # treat as category/text
+                    s_str = s.astype("string")
+                    col_type = "category"
+                    try:
+                        vc = s_str.value_counts(dropna=True)
+                        if len(vc) > 0:
+                            top_val = str(vc.index[0])
+                            top_pct = float(vc.iloc[0] / max(1, nonnull)) * 100
+                            extra = f" | top={top_val} ({top_pct:.1f}%)"
+                    except Exception:
+                        pass
+                    # if very high cardinality, hint text-ish
+                    try:
+                        if unique > 0.8 * max(1, nonnull):
+                            # average length as signal
+                            avg_len = float(s_str.dropna().str.len().mean() or 0)
+                            extra += f" | avg_len={avg_len:.1f}"
+                            col_type = "text"
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        flags_part = f" | flags={','.join(flags)}" if flags else ""
+        line = (
+            f"{col} | type={col_type} | nonnull={nonnull} | missing={missing_pct:.1f}% | unique={unique}" 
+            f"{extra}{flags_part}"
         )
-        new_id = getattr(res, "lastrowid", None)
-        if new_id is None:
-            new_id = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
-        return int(new_id)
+        lines.append(line)
+
+    return lines
 
 
-def compute_generic_insights(df: pd.DataFrame) -> dict:
-    """Generische Auto-Insights für beliebige CSVs: Missing, Zeitspalten, Numerik, Kategorien."""
-    insights: dict = {}
+# --- Cross-column overview for Stage-2 prompts (very compact) ---
+def build_cross_column_overview(df: pd.DataFrame) -> str:
+    """Cross-column overview for Stage-2 prompts (very compact).
+    Summarizes types, missingness, and key numeric/category signals across ALL columns.
+    Returns a short multi-line string.
+    """
+    lines: list[str] = []
+    n_rows = int(len(df))
+    n_cols = int(df.shape[1])
+    lines.append(f"Gesamt: {n_rows} Zeilen, {n_cols} Spalten")
 
-    # Fehlwerte
+    # --- Spaltentypen zählen ---
     try:
-        missing_per_col = df.isna().sum()
-        insights["missing"] = {
-            "rows_with_missing": int(df.isna().any(axis=1).sum()),
-            "per_column": {str(k): int(v) for k, v in missing_per_col.items()},
-        }
+        num_cols = list(df.select_dtypes(include=["number"]).columns)
+        obj_cols = list(df.select_dtypes(include=["object", "string", "category"]).columns)
+        # Heuristik für Datums-Spalten (nicht zu teuer)
+        dt_cols: list[str] = []
+        for c in df.columns:
+            try:
+                if _looks_like_datetime(df[c]):
+                    dt_cols.append(c)
+            except Exception:
+                continue
+        # Text vs Kategorie grob trennen: hohe Kardinalität ~ Text
+        cat_cols: list[str] = []
+        text_like: list[str] = []
+        for c in obj_cols:
+            try:
+                s = df[c].astype("string")
+                uniq = int(s.nunique(dropna=True))
+                nonnull = int(s.notna().sum())
+                if nonnull > 0 and uniq > 0.8 * nonnull:
+                    text_like.append(c)
+                else:
+                    cat_cols.append(c)
+            except Exception:
+                cat_cols.append(c)
+        lines.append(
+            f"Typen: numeric={len(num_cols)}, category={len(cat_cols)}, text≈{len(text_like)}, datetime≈{len(dt_cols)}"
+        )
     except Exception:
-        pass
+        num_cols, cat_cols, text_like, dt_cols = [], [], [], []
 
-    # Zeitspalten (Datetime)
-    dt_info = {}
-    dt_warnings: list[str] = []
-    for c in df.columns:
-        try:
-            if not _looks_like_datetime(df[c]):
-                continue
-            s = _parse_datetime_series(df[c])
-            if s.isna().mean() > 0.5:
-                # überwiegend NaT → nicht als Datum behandeln
-                dt_warnings.append(
-                    f"Spalte '{c}': uneinheitliches/unklares Datumsformat – wurde als Text behandelt. "
-                    "Tipp: Export in ein konsistentes Format (z. B. ISO 8601 'YYYY-MM-DD') und ohne Mischformen."
+    # --- Missingness (global + Top-5) ---
+    try:
+        miss_pct = df.isna().mean() * 100.0
+        avg_missing = float(miss_pct.mean()) if len(miss_pct) else 0.0
+        top_missing = miss_pct.sort_values(ascending=False).head(5)
+        tm_str = ", ".join(f"{k}={v:.1f}%" for k, v in top_missing.items()) if not top_missing.empty else "–"
+        lines.append(f"Fehlwerte: Ø {avg_missing:.1f}% | Top: {tm_str}")
+    except Exception:
+        lines.append("Fehlwerte: (n/a)")
+
+    # --- Numeric: Verteilungsspread & Volatilität ---
+    try:
+        if num_cols:
+            medians = {}
+            stds = {}
+            outlier_cols = 0
+            outlier_ratio_mean = 0.0
+            for c in num_cols:
+                try:
+                    s = pd.to_numeric(df[c], errors="coerce").dropna()
+                    if s.empty:
+                        continue
+                    medians[c] = float(s.quantile(0.5))
+                    stds[c] = float(s.std()) if s.size > 1 else 0.0
+                    # IQR-Outlier Anteil
+                    q1, q3 = s.quantile(0.25), s.quantile(0.75)
+                    iqr = float(q3 - q1)
+                    lower, upper = float(q1 - 1.5 * iqr), float(q3 + 1.5 * iqr)
+                    m = (s < lower) | (s > upper)
+                    out_c = int(m.sum())
+                    if out_c > 0:
+                        outlier_cols += 1
+                    outlier_ratio_mean += (out_c / max(1, s.size))
+                except Exception:
+                    continue
+            if medians:
+                med_range = (min(medians.values()), max(medians.values()))
+                std_sorted = sorted(stds.items(), key=lambda kv: (kv[1] if kv[1] is not None else 0.0), reverse=True)
+                top_std = ", ".join(f"{k}={v:.1f}" for k, v in std_sorted[:5]) if std_sorted else "–"
+                outlier_share = (outlier_cols / max(1, len(medians))) * 100.0
+                outlier_ratio_mean = (outlier_ratio_mean / max(1, len(medians))) * 100.0
+                lines.append(
+                    f"Numerik: Median-Range={med_range[0]:.2f}–{med_range[1]:.2f} | Top Std: {top_std} | Outlier-Spalten≈{outlier_share:.1f}% (Ø Anteil {outlier_ratio_mean:.1f}%)"
                 )
-                continue
-            dt_info[c] = {"min": str(s.min()), "max": str(s.max())}
-        except Exception:
-            continue
-    if dt_info:
-        insights["datetime"] = dt_info
-    if dt_warnings:
-        insights.setdefault("warnings", []).extend(dt_warnings)
+            else:
+                lines.append("Numerik: (n/a)")
+        else:
+            lines.append("Numerik: (keine numerischen Spalten)")
+    except Exception:
+        lines.append("Numerik: (n/a)")
 
-    # Numerische Spalten
-    num_cols = df.select_dtypes(include=["number"]).columns.tolist()
-    num_info = {}
-    for c in num_cols:
-        try:
-            s = pd.to_numeric(df[c], errors="coerce")
-            if not s.notna().any():
-                continue
-            q = s.quantile([0.25, 0.5, 0.75])
-            num_info[c] = {
-                "count": int(s.count()),
-                "mean": float(s.mean()),
-                "std": float(s.std()) if s.count() > 1 else None,
-                "min": float(s.min()),
-                "q25": float(q.loc[0.25]),
-                "median": float(q.loc[0.5]),
-                "q75": float(q.loc[0.75]),
-                "max": float(s.max()),
-            }
-        except Exception:
-            continue
-    if num_info:
-        insights["numeric"] = num_info
+    # --- Kategorien: Kardinalität Top-5 ---
+    try:
+        if cat_cols:
+            uniqs = []
+            for c in cat_cols:
+                try:
+                    s = df[c].astype("string")
+                    uniqs.append((c, int(s.nunique(dropna=True))))
+                except Exception:
+                    continue
+            uniqs.sort(key=lambda kv: kv[1], reverse=True)
+            top_uniq = ", ".join(f"{k}={v}" for k, v in uniqs[:5]) if uniqs else "–"
+            lines.append(f"Kategorien: höchste Kardinalität: {top_uniq}")
+        else:
+            lines.append("Kategorien: (keine)")
+    except Exception:
+        lines.append("Kategorien: (n/a)")
 
-    # Kategorische Spalten (alles, was nicht numeric/datetime ist)
-    cat_info = {}
-    cat_cols = [c for c in df.columns if c not in num_cols and c not in (insights.get("datetime") or {}).keys()]
-    for c in cat_cols:
-        try:
-            s = df[c].astype("string")
-            if not s.notna().any():
-                continue
-            vc = s.value_counts(dropna=True)
-            top = str(vc.index[0]) if len(vc) > 0 else None
-            freq = int(vc.iloc[0]) if len(vc) > 0 else None
-            cat_info[c] = {
-                "count": int(s.count()),
-                "unique": int(s.nunique(dropna=True)),
-                "top": top,
-                "freq": freq,
-            }
-        except Exception:
-            continue
-    if cat_info:
-        insights["categorical"] = cat_info
+    return "\n".join(lines)
 
-    return insights
 
 from sqlalchemy import text as _sql_text
 
@@ -474,7 +547,7 @@ def get_dataset_original_name(engine, dataset_id: int) -> str:
     return row["original_name"] if row else f"Dataset {int(dataset_id)}"
 
 
-def build_dataset_context(engine, dataset_id: int, n_rows: int = 5, max_cols: int = 12) -> str:
+def build_dataset_context(engine, dataset_id: int, n_rows: int = 5, max_cols: int = 12, include_columns: list[str] | None = None) -> str:
     """Erzeuge einen kompakten Kontextblock aus dem gespeicherten CSV für LLM-Prompts.
 
     Inhalt:
@@ -519,17 +592,28 @@ def build_dataset_context(engine, dataset_id: int, n_rows: int = 5, max_cols: in
     except Exception as e:
         return f"(CSV konnte nicht geladen werden: {e})"
 
+    # Optionally restrict to explicitly selected columns for Stage-2
+    used_selected = False
+    if include_columns:
+        sel = [c for c in include_columns if c in df.columns]
+        if sel:
+            df = df[sel]
+            used_selected = True
+
     # 3) Spaltenliste + dtypes (gekürzt)
     try:
-        cols = list(map(str, df.columns))
+        all_cols = list(map(str, df.columns))
         dtypes = [str(df[c].dtype) for c in df.columns]
-        if len(cols) > max_cols:
-            cols_show = cols[:max_cols] + [f"… (+{len(cols)-max_cols} weitere)"]
+        # If we are using an explicit selection, do not apply max_cols truncation
+        if not used_selected and len(all_cols) > max_cols:
+            cols_show = all_cols[:max_cols] + [f"… (+{len(all_cols)-max_cols} weitere)"]
             dtypes_show = dtypes[:max_cols] + ["…"]
         else:
-            cols_show = cols
+            cols_show = all_cols
             dtypes_show = dtypes
         cols_block = "\n".join(f"- {c} ({t})" for c, t in zip(cols_show, dtypes_show))
+        if used_selected:
+            cols_block += "\n(Hinweis: Kontext auf ausgewählte Spalten beschränkt)"
     except Exception:
         cols_block = "(Spaltenliste nicht verfügbar)"
 

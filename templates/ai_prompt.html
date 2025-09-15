@@ -2,17 +2,23 @@
 {% block title %}AI Assistant – DataBotti{% endblock %}
 
 {% block content %}
+{% if not ai_consent %}
 <!-- AI Opt-in Popup -->
 <div id="ai-optin-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;">
   <div style="background:#fff;padding:20px;border-radius:8px;max-width:500px;width:90%;text-align:center;">
     <h2>Zustimmung erforderlich</h2>
     <p>Die KI-Funktion analysiert die übermittelten Daten mithilfe externer Dienste. Möchten Sie fortfahren?</p>
     <div style="margin-top:16px;">
-      <button id="ai-optin-accept" class="btn btn-primary">Ja, fortfahren</button>
-      <a href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}" class="btn">Nein, zurück</a>
+      <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="display:inline;">
+        <input type="hidden" name="consent" value="1">
+        <button type="submit" id="ai-optin-accept" class="btn btn-primary">Ja, fortfahren</button>
+      </form>
+      <a href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}" class="btn">Nein, zurück</a>
     </div>
+    <p style="margin-top:8px;font-size:0.9em;color:#555;">Hinweis: Die Einwilligung gilt für eine begrenzte Zeit und kann jederzeit widerrufen werden.</p>
   </div>
 </div>
+{% endif %}
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -27,44 +33,109 @@ document.addEventListener("DOMContentLoaded", function() {
   // --- Buttons für vorgefertigte Prompts ---
   var promptBox = document.querySelector('textarea[name="prompt"]');
   var eo = document.getElementById('expected_output');
+  var task = document.getElementById('task');
   var btnSummary = document.getElementById('btn-fn-summary');
   var btnOutliers = document.getElementById('btn-fn-outliers');
   var btnQuality = document.getElementById('btn-fn-quality');
+  var btnCorr = document.getElementById('btn-fn-correlations');
+  var btnCats = document.getElementById('btn-fn-categories');
+  var btnTime = document.getElementById('btn-fn-time');
+  var btnDup = document.getElementById('btn-fn-duplicates');
+  var btnSeg = document.getElementById('btn-fn-segments');
 
-  if (btnSummary && promptBox && eo) {
+  function setEO(val) { if (eo) eo.value = val; }
+  function setTask(val) { if (task) task.value = val; }
+
+  if (btnSummary && promptBox) {
     btnSummary.addEventListener('click', function() {
-      promptBox.value = "Erstelle eine Management Summary in 5–7 Bullet Points zu diesem Datensatz. Fokus: wichtigste Trends, Ausnahmen, Risiken. Klare, präzise Sprache.";
-      eo.value = "long";
+      promptBox.value = "Erstelle eine Management-Zusammenfassung in 5–7 Bullet Points. Fokus: wichtigste Trends, Ausnahmen, Risiken. Klare, präzise Sprache.";
+      setEO('long');
+      setTask('summary');
     });
   }
-  if (btnOutliers && promptBox && eo) {
+  if (btnOutliers && promptBox) {
     btnOutliers.addEventListener('click', function() {
       promptBox.value = "Nenne die 3 größten Ausreißer (mit Spalte/Zeile) und gib je 1 kurzen, plausiblen Erklärsatz. Antworte knapp.";
-      eo.value = "short";
+      setEO('short');
+      setTask('outliers');
     });
   }
-  if (btnQuality && promptBox && eo) {
+  if (btnQuality && promptBox) {
     btnQuality.addEventListener('click', function() {
       promptBox.value = "Prüfe die Datenqualität: fehlende Werte, Dubletten, Extremwerte, inkonsistente Kategorien. Liefere eine knappe Checkliste mit 4–6 Punkten.";
-      eo.value = "medium";
+      setEO('medium');
+      setTask('quality');
+    });
+  }
+  if (btnCorr && promptBox) {
+    btnCorr.addEventListener('click', function() {
+      promptBox.value = "Analysiere Korrelationen zwischen numerischen Spalten. Nenne die 5 stärksten positiven und 5 stärksten negativen Korrelationen (mit Spaltenpaaren) und eine kurze Interpretation.";
+      setEO('medium');
+      setTask('correlations');
+    });
+  }
+  if (btnCats && promptBox) {
+    btnCats.addEventListener('click', function() {
+      promptBox.value = "Gib einen Überblick über kategoriale Spalten: Anzahl Kategorien, Top-Kategorie(n) mit Anteilen, lange Verteilungen (Long Tail). Fasse in 4–6 Bullet Points zusammen.";
+      setEO('medium');
+      setTask('categories');
+    });
+  }
+  if (btnTime && promptBox) {
+    btnTime.addEventListener('click', function() {
+      promptBox.value = "Untersuche zeitliche Muster: Trends, Saisonalität, Cluster. Nenne 3–5 Beobachtungen mit Datumshinweisen. Falls keine Datumsspalte vorhanden ist, erkläre das knapp.";
+      setEO('medium');
+      setTask('time_trends');
+    });
+  }
+  if (btnDup && promptBox) {
+    btnDup.addEventListener('click', function() {
+      promptBox.value = "Prüfe auf potenzielle Duplikate und Eindeutigkeit. Nenne Kandidatenschlüssel (einzeln oder Kombination), schätze die Duplikatrate und gib eine kurze Empfehlung.";
+      setEO('short');
+      setTask('duplicates');
+    });
+  }
+  if (btnSeg && promptBox) {
+    btnSeg.addEventListener('click', function() {
+      promptBox.value = "Vergleiche zentrale Kennzahlen über eine ausgewählte Kategorie (z. B. Preis/Menge nach Kategorie). Nenne 3–5 Unterschiede/Segmente mit kurzer Interpretation.";
+      setEO('medium');
+      setTask('segments');
     });
   }
 });
 </script>
 
+{% if ai_consent %}
+<form method="post" action="{{ url_for('assistant.revoke_ai_consent', dataset_id=dataset_id) }}" style="float:right; margin-top:8px;">
+  <button type="submit" class="btn btn-link" style="padding:0;">Einwilligung widerrufen</button>
+</form>
+<div style="clear:both;"></div>
 <h1>AI Assistant für {{ filename }}</h1>
 
-<form method="post" style="margin-top:12px;">
+<form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="margin-top:12px;">
   <input type="hidden" id="expected_output" name="expected_output" value="medium">
+  <input type="hidden" id="task" name="task" value="">
   <div class="btn-group" style="margin:8px 0; display:flex; gap:8px; flex-wrap:wrap;">
-    <button type="button" class="btn btn-secondary" id="btn-fn-summary">Report zusammenfassen</button>
-    <button type="button" class="btn btn-secondary" id="btn-fn-outliers">Ausreißer erklären (kurz)</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-summary">Management-Zusammenfassung</button>
     <button type="button" class="btn btn-secondary" id="btn-fn-quality">Datenqualität prüfen</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-outliers">Ausreißer erklären (kurz)</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-correlations">Korrelationen (numerisch)</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-categories">Kategorien-Überblick</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-time">Zeitliche Muster</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-duplicates">Duplikate & Eindeutigkeit</button>
+    <button type="button" class="btn btn-secondary" id="btn-fn-segments">Segmentvergleich</button>
   </div>
   <textarea name="prompt" rows="6" style="width:100%;" placeholder="Frag die KI z. B.: Fasse die wichtigsten Trends zusammen …"></textarea>
+  <div class="force-smart" style="margin:12px 0; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc;">
+    <label for="force_smart" style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer;">
+      <input type="checkbox" id="force_smart" name="force_smart" value="1">
+      <span>Höchste Qualität bevorzugen (GPT‑5‑mini) — dies führt wahrscheinlich zu höheren Kosten</span>
+    </label>
+  </div>
   <div style="margin-top:8px;">
     <button type="submit" class="btn btn-primary">Ask AI</button>
-    <a class="btn" href="{{ url_for('analyze_dataset', dataset_id=dataset_id) }}">Zurück</a>
+    <a class="btn" href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}">Zurück</a>
   </div>
 </form>
+{% endif %}
 {% endblock %}
