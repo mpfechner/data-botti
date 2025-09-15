@@ -113,14 +113,24 @@ a:hover {
     padding: 10px;
 }
 
+.landing .header {
+    justify-content: center;
+    padding: 14px 10px;
+    margin-bottom: 12px;
+}
+
 .logo-container img.logo {
     height: 60px; /* Logo kleiner */
     margin-right: 10px;
 }
 
+.landing .logo-container img.logo { height: 90px; }
+
 .logo-container img.logo-text {
     height: 30px; /* Schriftzug anpassen */
 }
+
+.landing .logo-container img.logo-text { height: 42px; }
 
 .main-content {
     max-width: 720px;
@@ -330,4 +340,64 @@ a:hover {
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .flash { animation: none; }
+}
+
+.landing h1 + p { text-align: center; }
+
+/* ==========================
+   Auth pages (login, consent)
+   ========================== */
+.auth-page {
+  background-color: #f4f8fb;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.auth-card {
+  background: #fff;
+  max-width: 420px;
+  margin: 40px auto;
+  padding: 24px;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  text-align: center;
+}
+
+.auth-card h1 {
+  margin-bottom: 1rem;
+  color: #005f73;
+}
+
+.auth-card label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+  text-align: left;
+}
+
+.auth-card input[type="email"],
+.auth-card input[type="password"] {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.auth-card .btn-primary {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.auth-card .error {
+  color: #b3261e;
+  margin-bottom: 1rem;
+}
+
+.auth-card .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  font-size: 0.95rem;
 }

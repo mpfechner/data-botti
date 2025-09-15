@@ -10,9 +10,9 @@ datasets_bp = Blueprint("datasets", __name__)
 def upload_dataset():
     file = request.files.get("file")
     if not file or file.filename == '':
-        return render_template('index.html', error="Bitte eine CSV-Datei auswählen.")
+        return render_template('app.html', error="Bitte eine CSV-Datei auswählen.")
     if not file.filename.lower().endswith('.csv'):
-        return render_template('index.html', error="Nur .csv-Dateien sind erlaubt.")
+        return render_template('app.html', error="Nur .csv-Dateien sind erlaubt.")
 
     dataset_id, is_new = storage.save_uploaded_file(file, current_app.config["DB_ENGINE"])
     if not is_new:
