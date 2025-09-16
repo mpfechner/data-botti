@@ -3,6 +3,7 @@
 
 
 from flask import Flask, render_template
+from flask_wtf.csrf import CSRFProtect
 import os
 from dotenv import load_dotenv
 from db import init_engine
@@ -18,6 +19,7 @@ from infra.logging import setup_app_logging
 load_dotenv()
 
 app = Flask(__name__)
+csrf = CSRFProtect(app)
 setup_app_logging(app)
 
 # Blueprints an die App „andocken“

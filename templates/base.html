@@ -5,6 +5,9 @@
     <title>{% block title %}DataBotti{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='Logo.png') }}">
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 </head>
 <body>
     <header class="header">
@@ -12,17 +15,17 @@
             <img src="{{ url_for('static', filename='Logo.png') }}" alt="Logo" class="logo">
             <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti" class="logo-text">
         </div>
-        <nav class="nav">
-            <a href="{{ url_for('index') }}" class="nav-link">Home</a>
-            {% if session.get('is_admin') %}
-            <a href="{{ url_for('admin.list_users') }}" class="nav-link">Admin</a>
-            {% endif %}
-        </nav>
-        {% if session.get('user_id') %}
-        <form action="{{ url_for('auth.logout') }}" method="post" style="margin-left:auto;">
+        <div class="nav-buttons" style="margin-left:auto; display:flex; gap:0.5rem;">
+          {% if session.get('is_admin') %}
+          <a href="{{ url_for('admin.list_users') }}" class="btn">Admin</a>
+          {% endif %}
+          <a href="/app" class="btn">Home</a>
+          {% if session.get('user_id') %}
+          <form action="{{ url_for('auth.logout') }}" method="post">
             <button type="submit" class="btn">Logout</button>
-        </form>
-        {% endif %}
+          </form>
+          {% endif %}
+        </div>
     </header>
     <main>
         {% with messages = get_flashed_messages(with_categories=true) %}

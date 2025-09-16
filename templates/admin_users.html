@@ -5,7 +5,12 @@
 
 {% block content %}
 <div class="container">
+
   <h1 class="page-title">Admin · Users</h1>
+  <div class="button-group">
+    <a class="btn btn-primary" href="{{ url_for('admin.list_users') }}">Users</a>
+    <a class="btn btn-secondary" href="{{ url_for('admin.list_groups') }}">Groups</a>
+  </div>
 
   <section class="card">
     <h2 class="card-title">Create User</h2>

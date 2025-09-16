@@ -5,6 +5,13 @@ from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
 
+class DuplicateEmailError(Exception):
+    pass
+
+class DuplicateGroupNameError(Exception):
+    pass
+
+
 # --- dataset_files repository helpers -----------------------------------------------------------
 
 def get_latest_dataset_file(conn, dataset_id: int) -> Optional[Mapping]:
@@ -218,25 +225,28 @@ def repo_list_users():
 
 
 def repo_create_user(*, email: str, username: str | None, password_hash: str, is_admin: int = 0) -> int:
-    """Create user and return new id. Raises IntegrityError on duplicate email."""
     engine = _get_engine_from_app()
     if engine is None:
         raise RuntimeError("DB engine not configured on current_app")
     with engine.begin() as conn:
-        res = conn.execute(
-            text(
-                """
-                INSERT INTO users (email, username, password_hash, is_admin)
-                VALUES (:email, :username, :password_hash, :is_admin)
-                """
-            ),
-            {
-                "email": email,
-                "username": username,
-                "password_hash": password_hash,
-                "is_admin": int(bool(is_admin)),
-            },
-        )
+        try:
+            res = conn.execute(
+                text(
+                    """
+                    INSERT INTO users (email, username, password_hash, is_admin)
+                    VALUES (:email, :username, :password_hash, :is_admin)
+                    """
+                ),
+                {
+                    "email": email,
+                    "username": username,
+                    "password_hash": password_hash,
+                    "is_admin": int(bool(is_admin)),
+                },
+            )
+        except IntegrityError as e:
+            # Map DB duplicate error to domain-specific
+            raise DuplicateEmailError() from e
         new_id = None
         try:
             new_id = int(getattr(res, "lastrowid", None) or 0) or None
@@ -274,3 +284,140 @@ def repo_delete_user(*, user_id: int) -> None:
         raise RuntimeError("DB engine not configured on current_app")
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": int(user_id)})
+
+
+# --- group & membership repository helpers -----------------------------------------------------
+
+def repo_list_groups():
+    """Return all groups with member_count.
+    Columns: id, name, created_at, member_count
+    """
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT g.id, g.name, g.created_at,
+                       (SELECT COUNT(*) FROM user_groups ug WHERE ug.group_id = g.id) AS member_count
+                FROM groups g
+                ORDER BY g.name
+                """
+            )
+        ).mappings().all()
+    return rows
+
+
+essential_dupe_sql = """
+INSERT INTO user_groups (user_id, group_id)
+VALUES (:user_id, :group_id)
+ON DUPLICATE KEY UPDATE group_id = group_id
+"""
+
+
+def repo_create_group(*, name: str) -> int:
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        try:
+            res = conn.execute(text("INSERT INTO groups (name) VALUES (:name)"), {"name": name})
+        except IntegrityError as e:
+            raise DuplicateGroupNameError() from e
+        new_id = None
+        try:
+            new_id = int(getattr(res, "lastrowid", None) or 0) or None
+        except Exception:
+            new_id = None
+        if new_id is None:
+            try:
+                new_id = int(conn.execute(text("SELECT LAST_INSERT_ID() AS id")).scalar())
+            except Exception:
+                new_id = None
+        if new_id is None:
+            raise RuntimeError("Could not determine new group id after insert")
+        return new_id
+
+
+def repo_delete_group(*, group_id: int) -> None:
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM groups WHERE id = :id"), {"id": int(group_id)})
+
+
+def repo_list_group_members(*, group_id: int):
+    """Return members of a group with user info.
+    Columns: id, email, username, is_admin, added_at
+    """
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT u.id, u.email, u.username, u.is_admin, ug.added_at
+                FROM user_groups ug
+                JOIN users u ON u.id = ug.user_id
+                WHERE ug.group_id = :gid
+                ORDER BY u.email
+                """
+            ),
+            {"gid": int(group_id)},
+        ).mappings().all()
+    return rows
+
+
+def repo_add_user_to_group(*, user_id: int, group_id: int) -> None:
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        try:
+            # MySQL-friendly upsert to ignore duplicates
+            conn.execute(
+                text(essential_dupe_sql),
+                {"user_id": int(user_id), "group_id": int(group_id)},
+            )
+        except IntegrityError:
+            # Fallback for strict modes or other engines: ignore if already exists
+            pass
+
+
+def repo_remove_user_from_group(*, user_id: int, group_id: int) -> None:
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM user_groups WHERE user_id = :uid AND group_id = :gid"),
+            {"uid": int(user_id), "gid": int(group_id)},
+        )
+
+# --- admin guardrail helpers -------------------------------------------------------------------
+
+def repo_is_user_admin(*, user_id: int) -> bool:
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        val = conn.execute(text("SELECT is_admin FROM users WHERE id = :id"), {"id": int(user_id)}).scalar()
+    try:
+        return bool(int(val)) if val is not None else False
+    except Exception:
+        return False
+
+
+def repo_count_admins() -> int:
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        n = conn.execute(text("SELECT COUNT(*) FROM users WHERE is_admin = 1")).scalar()
+    try:
+        return int(n) if n is not None else 0
+    except Exception:
+        return 0
