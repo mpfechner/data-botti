@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import Optional, Mapping
 from sqlalchemy import text
+from flask import current_app
+from sqlalchemy.exc import IntegrityError
 
 
 # --- dataset_files repository helpers -----------------------------------------------------------
@@ -186,3 +188,89 @@ def insert_dataset_and_file(
     )
 
     return dataset_id, True
+
+
+# --- user repository helpers (used by routes/admin.py) -----------------------------------------
+
+def _get_engine_from_app():
+    try:
+        return current_app.config.get("DB_ENGINE")
+    except Exception:
+        return None
+
+
+def repo_list_users():
+    """Return all users with id, email, username, is_admin."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, email, username, is_admin
+                FROM users
+                ORDER BY id
+                """
+            )
+        ).mappings().all()
+    return rows
+
+
+def repo_create_user(*, email: str, username: str | None, password_hash: str, is_admin: int = 0) -> int:
+    """Create user and return new id. Raises IntegrityError on duplicate email."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        res = conn.execute(
+            text(
+                """
+                INSERT INTO users (email, username, password_hash, is_admin)
+                VALUES (:email, :username, :password_hash, :is_admin)
+                """
+            ),
+            {
+                "email": email,
+                "username": username,
+                "password_hash": password_hash,
+                "is_admin": int(bool(is_admin)),
+            },
+        )
+        new_id = None
+        try:
+            new_id = int(getattr(res, "lastrowid", None) or 0) or None
+        except Exception:
+            new_id = None
+        if new_id is None:
+            try:
+                new_id = int(conn.execute(text("SELECT LAST_INSERT_ID() AS id")).scalar())
+            except Exception:
+                new_id = None
+        if new_id is None:
+            raise RuntimeError("Could not determine new user id after insert")
+        return new_id
+
+
+def repo_update_user_password(*, user_id: int, password_hash: str) -> None:
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE users SET password_hash = :password_hash
+                WHERE id = :user_id
+                """
+            ),
+            {"password_hash": password_hash, "user_id": int(user_id)},
+        )
+
+
+def repo_delete_user(*, user_id: int) -> None:
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": int(user_id)})

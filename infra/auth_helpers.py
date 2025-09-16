@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 from functools import wraps
 from typing import Callable, Optional
@@ -136,6 +134,38 @@ def consent_required(view: Callable):
             flash("Bitte erteile zuerst dein Einverständnis zur Datennutzung.", "info")
             next_url = request.full_path if request.query_string else request.path
             return redirect(url_for("auth.consent", next=next_url))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def admin_required(view: Callable):
+    """Decorator: require that the logged-in user is an admin.
+    If not logged in → behaves like login_required.
+    If logged in but not admin → redirect to /auth/login with message.
+    """
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        uid = get_current_user_id()
+        if uid is None:
+            flash("Bitte melde dich zuerst an.", "warning")
+            next_url = request.full_path if request.query_string else request.path
+            return redirect(url_for("auth.login", next=next_url))
+        engine = _get_engine_from_app() or _get_engine_optional()
+        if engine is None:
+            flash("Keine Datenbankverbindung für Admin-Prüfung.", "danger")
+            return redirect(url_for("auth.login"))
+        try:
+            with engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT is_admin FROM users WHERE id = :uid"),
+                    {"uid": uid},
+                ).fetchone()
+            if not row or not bool(row[0]):
+                flash("Admin-Berechtigung erforderlich.", "danger")
+                return redirect(url_for("auth.login"))
+        except Exception:
+            flash("Fehler bei der Admin-Prüfung.", "danger")
+            return redirect(url_for("auth.login"))
         return view(*args, **kwargs)
     return wrapped
 

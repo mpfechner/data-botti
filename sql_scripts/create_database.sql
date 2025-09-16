@@ -1,13 +1,48 @@
 CREATE DATABASE IF NOT EXISTS databotti;
 USE databotti;
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    username TEXT NOT NULL,
-    email TEXT NOT NULL
+    email VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    is_admin TINYINT(1) NOT NULL DEFAULT 0,
+    username VARCHAR(80) NULL,
+    consent_given_at DATETIME NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_users_email (email)
+);
+-- ------------------------------------------------------------
+-- Optional seed admin (commented by default)
+-- How to use:
+--   1) Generate a password hash locally (Python one-liner):
+--        >>> from werkzeug.security import generate_password_hash
+--        >>> print(generate_password_hash("ChangeMe123!"))
+--      Copy the resulting hash.
+--   2) Uncomment the INSERT below and replace email/username/hash as needed.
+--      You can re-run the init or execute it manually against the DB.
+--
+-- INSERT INTO users (email, password_hash, username, is_admin)
+-- VALUES ('admin@example.com', '<PASTE_HASH_HERE>', 'admin', 1);
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS groups (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_groups_name (name)
 );
 
-CREATE TABLE datasets (
+CREATE TABLE IF NOT EXISTS user_groups (
+    user_id INT NOT NULL,
+    group_id INT NOT NULL,
+    added_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, group_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS datasets (
     id INT AUTO_INCREMENT PRIMARY KEY,
     filename TEXT NOT NULL,
     upload_date DATETIME NOT NULL,
@@ -15,7 +50,7 @@ CREATE TABLE datasets (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE TABLE prompts (
+CREATE TABLE IF NOT EXISTS prompts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     dataset_id INT,
     user_id INT,
@@ -26,7 +61,7 @@ CREATE TABLE prompts (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE TABLE reports (
+CREATE TABLE IF NOT EXISTS reports (
     id INT AUTO_INCREMENT PRIMARY KEY,
     dataset_id INT,
     summary TEXT,

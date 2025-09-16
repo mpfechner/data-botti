@@ -9,6 +9,7 @@ from db import init_engine
 from routes.datasets import datasets_bp
 from routes.assistant import assistant_bp
 from routes.auth import auth_bp
+from routes.admin import bp as admin_bp
 from infra.auth_helpers import login_required, consent_required
 from infra.config import get_config
 from infra.logging import setup_app_logging
@@ -23,6 +24,7 @@ setup_app_logging(app)
 app.register_blueprint(datasets_bp)
 app.register_blueprint(assistant_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(admin_bp)
 
 # Apply config
 app.config.update(get_config())

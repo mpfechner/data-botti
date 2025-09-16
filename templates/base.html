@@ -12,6 +12,12 @@
             <img src="{{ url_for('static', filename='Logo.png') }}" alt="Logo" class="logo">
             <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti" class="logo-text">
         </div>
+        <nav class="nav">
+            <a href="{{ url_for('index') }}" class="nav-link">Home</a>
+            {% if session.get('is_admin') %}
+            <a href="{{ url_for('admin.list_users') }}" class="nav-link">Admin</a>
+            {% endif %}
+        </nav>
         {% if session.get('user_id') %}
         <form action="{{ url_for('auth.logout') }}" method="post" style="margin-left:auto;">
             <button type="submit" class="btn">Logout</button>
