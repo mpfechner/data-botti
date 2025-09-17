@@ -1,7 +1,7 @@
 # DataBotti
 
 DataBotti is a data analyzing tool with AI support.  
-Current status: **MVP / Work in Progress** – basic functions are available, AI functionality is integrated and will be extended. Next milestone: user management.  
+Current status: **MVP / Work in Progress** – basic functions are available, AI functionality is integrated and extended with an AI Router for cost control. Next milestone: Block 1 – Q&A functionality.
 
 ---
 
@@ -77,7 +77,8 @@ Then you can start the backend locally in PyCharm while the database runs in the
 - ✅ AI features integrated (OpenAI API)  
 - ✅ Logging with rotation in place  
 - ✅ Consent gating implemented (versioning, TTL-ready)  
+- ✅ AI Router implemented (cost-control threshold, model routing)  
 - ✅ Duplicate file handling with flash messages  
 - ✅ Refactored analyze route to service layer  
 - 🔄 Extension of AI functionality (robust stats, outlier detection, safety prompts)  
-- ⏳ Next milestone: user management and test coverage
+- ⏳ Next milestone: Block 1 – Q&A functionality

@@ -39,7 +39,7 @@ def get_config() -> dict:
         "AI_MODEL_FAST": os.getenv("AI_MODEL_FAST", "gpt-4o-mini"),
         "AI_MODEL_SMART": os.getenv("AI_MODEL_SMART", "gpt-5-mini"),
         "AI_FORCE_MODEL": os.getenv("AI_FORCE_MODEL", ""),
-        "AI_DOWNGRADE_SAVING": os.getenv("AI_DOWNGRADE_SAVING", "0.99"),
+        "AI_DOWNGRADE_SAVING": os.getenv("AI_DOWNGRADE_SAVING", "0.7"),
         "OPENAI_API_KEY_BOTTI": os.getenv("OPENAI_API_KEY_BOTTI", ""),
         "SECRET_KEY": get_secret_key(),
         "CONSENT_VERSION": int(os.getenv("CONSENT_VERSION", 1)),
