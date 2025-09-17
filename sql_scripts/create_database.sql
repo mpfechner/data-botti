@@ -100,3 +100,49 @@ CREATE TABLE IF NOT EXISTS dataset_columns (
     UNIQUE KEY uq_dc_dataset_ordinal (dataset_id, ordinal),
     KEY idx_dc_dataset (dataset_id)
 );
+
+-- ============================================================
+-- Q&A Pairs (Exact + Metadaten)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS qa_pairs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  file_hash VARCHAR(64) NOT NULL,                -- Scope (z. B. Datei-Hash)
+  question_original TEXT NOT NULL,
+  question_norm TEXT NOT NULL,                   -- normalisierte Frage
+  question_hash CHAR(64) NOT NULL,               -- SHA-256 hex von question_norm
+  answer TEXT NULL,
+  meta JSON NULL,                                -- {source, tags, ...}
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_qa_question_hash_file (question_hash, file_hash),
+  KEY idx_qa_file_created (file_hash, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Embeddings zu Q&A (distiluse-base-multilingual-cased-v2 → 512-D)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS qa_embeddings (
+  qa_id INT NOT NULL,
+  model VARCHAR(80) NOT NULL,
+  dim INT NOT NULL,
+  vec BLOB NOT NULL,                             -- float32[dim] (z. B. 512*4 = 2048 B)
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (qa_id, model),
+  CONSTRAINT fk_qaemb_qa FOREIGN KEY (qa_id)
+    REFERENCES qa_pairs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Token-Usage (LLM Telemetrie)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS token_usage (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ts TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  user_id INT NULL,
+  model VARCHAR(80) NOT NULL,
+  operation VARCHAR(40) NOT NULL,                -- z. B. 'qa.answer'
+  prompt_tokens INT NOT NULL DEFAULT 0,
+  completion_tokens INT NOT NULL DEFAULT 0,
+  total_tokens INT NOT NULL DEFAULT 0,
+  meta JSON NULL,
+  KEY idx_tokenusage_ts (ts DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
