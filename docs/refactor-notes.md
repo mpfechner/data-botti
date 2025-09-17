@@ -1,4 +1,4 @@
-# DataBotti Refactor Notes
+<file name=0 path=refactor-notes.md># DataBotti Refactor Notes
 
 ## Ziel
 Saubere Trennung von Schichten:
@@ -11,7 +11,6 @@ Saubere Trennung von Schichten:
 
 ## Verantwortungen
 
-### Routes
 - `routes/datasets.py` → Upload, Analyse-Start, Summary-Ansicht
 - `routes/assistant.py` → AI-Endpoints (Prompt, Result, Legacy-Redirect)
 
@@ -99,12 +98,12 @@ Saubere Trennung von Schichten:
 - [x] Upload POST (`/` oder `/upload`): Speichern via `storage.py`, Redirect auf Analyse
 
 **Services**
-- [ ] `dataset_service`: `load_csv()` (Encoding/Dialekt), `summary()` (shape/columns/describe)
-- [ ] `insights`: generische Befunde (Ausreißer, Verteilungen, NaNs)
-- [ ] `storage`: `save_file()`, `delete_file()`, Verzeichnis-Existenz sicherstellen
-- [ ] `ai_client`: Modellaufruf kapseln (Key/Timeout/Errors/Logging) – Config nutzen
-- [ ] `ai_tasks`: Prompt-Building konsolidieren (tote Pfade entfernen)
-- [ ] `ai_router`: `choose_model()` Integration & Parametereingang prüfen
+- [x] `dataset_service`: `load_csv()` (Encoding/Dialekt), `summary()` (shape/columns/describe)
+- [x] `insights`: generische Befunde (Ausreißer, Verteilungen, NaNs)
+- [x] `storage`: `save_file()`, `delete_file()`, Verzeichnis-Existenz sicherstellen
+- [x] `ai_client`: Modellaufruf kapseln (Key/Timeout/Errors/Logging) – Config nutzen
+- [x] `ai_tasks`: Prompt-Building konsolidieren (tote Pfade entfernen)
+- [x] `ai_router`: `choose_model()` Integration & Parametereingang prüfen
 
 **App Cleanup**
 - [x] Alte AI/Analyse-Routen aus `app.py` entfernen
@@ -115,7 +114,7 @@ Saubere Trennung von Schichten:
 
 **Config/Logging Konsistenz**
 - [x] `infra` integriert
-- [ ] Keine direkten `os.getenv` in Routes/Services (Ausnahme: `ai_client`, falls Key nicht via Config gereicht)
+- [x] Keine direkten `os.getenv` in Routes/Services (Ausnahme: `ai_client`, falls Key nicht via Config gereicht)
 
 **Manuelle Tests**
 - [x] Upload → Analyse-Ansicht funktioniert (kleine CSV)

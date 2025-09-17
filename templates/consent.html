@@ -1,0 +1,33 @@
+
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Einverständnis</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='Logo.png') }}">
+</head>
+<body class="auth-page">
+    <header class="header">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='Logo.png') }}" alt="Logo" class="logo">
+            <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti" class="logo-text">
+        </div>
+    </header>
+    <main>
+        <div class="auth-card">
+            <h1>Datennutzung zustimmen</h1>
+            <p>Bitte bestätige, dass deine Fragen und Antworten gespeichert und verarbeitet werden dürfen.</p>
+            <form method="post" action="{{ url_for('auth.consent') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="checkbox">
+                    <input type="checkbox" name="consent" value="yes" required>
+                    Ich stimme der Speicherung und Verarbeitung meiner Daten zu.
+                </label>
+                <button type="submit" class="btn-primary">Zustimmen</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

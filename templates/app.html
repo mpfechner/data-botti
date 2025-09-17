@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}DataBotti – CSV Analyzer{% endblock %}
+
+{% block content %}
+    <div class="main-content">
+        <div class="welcome-section">
+            <h1>Welcome to DataBotti</h1>
+            <p>Please upload a CSV file for analysis:</p>
+        </div>
+
+        <form action="{{ url_for('datasets.upload_dataset') }}" method="post" enctype="multipart/form-data" class="upload-form">
+            {{ csrf_field() }}
+            <div>
+                <input type="file" name="file" accept=".csv" required class="styled-input">
+            </div>
+            <div>
+                <button type="submit">Upload and Analyze</button>
+            </div>
+        </form>
+    </div>
+{% endblock %}

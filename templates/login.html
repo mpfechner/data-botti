@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='Logo.png') }}">
+</head>
+<body class="auth-page">
+    <header class="header">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='Logo.png') }}" alt="Logo" class="logo">
+            <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti" class="logo-text">
+        </div>
+    </header>
+    <main>
+        <div class="auth-card">
+            <h1>Login</h1>
+            {% if error %}
+                <p class="error">{{ error }}</p>
+            {% endif %}
+            <form method="post" action="{{ url_for('auth.login') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label for="email">E-Mail:</label>
+                <input type="email" id="email" name="email" required>
+
+                <label for="password">Passwort:</label>
+                <input type="password" id="password" name="password" required>
+
+                <button type="submit" class="btn-primary">Einloggen</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

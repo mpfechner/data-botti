@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Admin · Users{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <h1 class="page-title">Admin · Users</h1>
+  <div class="button-group">
+    <a class="btn btn-primary" href="{{ url_for('admin.list_users') }}">Users</a>
+    <a class="btn btn-secondary" href="{{ url_for('admin.list_groups') }}">Groups</a>
+  </div>
+
+  <section class="card">
+    <h2 class="card-title">Create User</h2>
+    <form method="post" action="{{ url_for('admin.create_user') }}" class="form form-horizontal">
+      {{ csrf_field() }}
+      <div class="form-row">
+        <label for="email">E-Mail</label>
+        <input id="email" name="email" type="email" required>
+      </div>
+      <div class="form-row">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" placeholder="optional">
+      </div>
+      <div class="form-row">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required>
+      </div>
+      <div class="form-row">
+        <label class="checkbox">
+          <input type="checkbox" name="is_admin" value="1">
+          <span>Admin</span>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Create</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">All Users</h2>
+    <div class="table-wrapper">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>E-Mail</th>
+            <th>Username</th>
+            <th>Admin</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.username or "—" }}</td>
+            <td>{% if u.is_admin %}✓{% else %}—{% endif %}</td>
+            <td class="actions">
+              <form method="post" action="{{ url_for('admin.change_password', user_id=u.id) }}" class="inline-form">
+                {{ csrf_field() }}
+                <input name="password" type="password" placeholder="new password" required>
+                <button class="btn btn-secondary" type="submit">Set Password</button>
+              </form>
+              <form method="post" action="{{ url_for('admin.delete_user', user_id=u.id) }}" class="inline-form" onsubmit="return confirm('Diesen Nutzer wirklich löschen?');">
+                {{ csrf_field() }}
+                <button class="btn btn-danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="muted">No users found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

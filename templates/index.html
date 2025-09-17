@@ -1,21 +1,31 @@
-{% extends "base.html" %}
-
-{% block title %}DataBotti – CSV Analyzer{% endblock %}
-
-{% block content %}
-    <div class="main-content">
-        <div class="welcome-section">
-            <h1>Welcome to DataBotti</h1>
-            <p>Please upload a CSV file for analysis:</p>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>DataBotti</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='Logo.png') }}">
+</head>
+<body class="landing">
+    <header class="header">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='Logo.png') }}" alt="Logo" class="logo">
+            <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti" class="logo-text">
         </div>
-
-        <form action="{{ url_for('datasets.upload_dataset') }}" method="post" enctype="multipart/form-data" class="upload-form">
-            <div>
-                <input type="file" name="file" accept=".csv" required class="styled-input">
-            </div>
-            <div>
-                <button type="submit">Upload and Analyze</button>
-            </div>
+    </header>
+    <h1>Willkommen bei DataBotti</h1>
+    <p>Dein KI-Assistent für die Analyse von CSV-Daten.</p>
+    <p>
+        <form action="{{ url_for('auth.login') }}" method="get">
+            <button type="submit" class="btn-login">Zum Login</button>
         </form>
-    </div>
-{% endblock %}
+    </p>
+    {% if session.get('user_id') %}
+    <p>
+        <form action="{{ url_for('app_dashboard') }}" method="get">
+            <button type="submit" class="btn-login">Zur App</button>
+        </form>
+    </p>
+    {% endif %}
+</body>
+</html>

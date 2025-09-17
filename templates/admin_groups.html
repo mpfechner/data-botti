@@ -1,0 +1,97 @@
+
+
+{% extends "base.html" %}
+{% block title %}Admin · Groups{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h1 class="page-title">Admin · Groups</h1>
+
+  <div class="button-group">
+    <a class="btn btn-secondary" href="{{ url_for('admin.list_users') }}">Users</a>
+    <a class="btn btn-primary" href="{{ url_for('admin.list_groups') }}">Groups</a>
+  </div>
+
+  <section class="card">
+    <h2 class="card-title">Create Group</h2>
+    <form method="post" action="{{ url_for('admin.create_group') }}" class="form form-horizontal">
+      {{ csrf_field() }}
+      <div class="form-row">
+        <label for="name">Name</label>
+        <input id="name" name="name" type="text" required>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Create</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">All Groups</h2>
+    <div class="table-wrapper">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Members</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in groups %}
+          <tr>
+            <td>{{ g.id }}</td>
+            <td>{{ g.name }}</td>
+            <td>
+              <div class="members">
+                {% set g_members = members.get(g.id, []) %}
+                {% if g_members %}
+                  <ul class="list-inline">
+                    {% for m in g_members %}
+                      <li>
+                        <span class="badge">{{ m.email }}</span>
+                        <form method="post" action="{{ url_for('admin.remove_user_from_group', group_id=g.id) }}" class="inline-form">
+                          {{ csrf_field() }}
+                          <input type="hidden" name="user_id" value="{{ m.id }}">
+                          <button class="btn btn-xsmall" type="submit" title="Remove">×</button>
+                        </form>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <span class="muted">No members</span>
+                {% endif %}
+              </div>
+
+              <form method="post" action="{{ url_for('admin.add_user_to_group', group_id=g.id) }}" class="form inline-form add-member-form">
+                {{ csrf_field() }}
+                <select name="user_id" required>
+                  <option value="" disabled selected>+ Add member…</option>
+                  {% for u in users %}
+                    {% if not g_members or (u.id not in (g_members | map(attribute='id'))) %}
+                      <option value="{{ u.id }}">{{ u.email }}{% if u.username %} ({{ u.username }}){% endif %}</option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+                <button class="btn btn-secondary" type="submit">Add</button>
+              </form>
+            </td>
+            <td class="actions">
+              <form method="post" action="{{ url_for('admin.delete_group', group_id=g.id) }}" class="inline-form" onsubmit="return confirm('Diese Gruppe wirklich löschen?');">
+                {{ csrf_field() }}
+                <button class="btn btn-danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="muted">No groups found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

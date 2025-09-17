@@ -3,11 +3,15 @@
 
 
 from flask import Flask, render_template
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 import os
 from dotenv import load_dotenv
 from db import init_engine
 from routes.datasets import datasets_bp
 from routes.assistant import assistant_bp
+from routes.auth import auth_bp
+from routes.admin import bp as admin_bp
+from infra.auth_helpers import login_required, consent_required
 from infra.config import get_config
 from infra.logging import setup_app_logging
 
@@ -15,11 +19,19 @@ from infra.logging import setup_app_logging
 load_dotenv()
 
 app = Flask(__name__)
+csrf = CSRFProtect(app)
+
+# stellt csrf_token in ALLEN Templates bereit (auch ohne base.html)
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf)
 setup_app_logging(app)
 
 # Blueprints an die App „andocken“
 app.register_blueprint(datasets_bp)
 app.register_blueprint(assistant_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(admin_bp)
 
 # Apply config
 app.config.update(get_config())
@@ -38,6 +50,13 @@ app.config['DB_ENGINE'] = init_engine()
 @app.route('/', methods=['GET'])
 def index():
     return render_template('index.html')
+
+
+@app.route('/app', methods=['GET'])
+@login_required
+@consent_required
+def app_dashboard():
+    return render_template('app.html')
 
 
 @app.route("/privacy")
