@@ -421,3 +421,69 @@ def repo_count_admins() -> int:
         return int(n) if n is not None else 0
     except Exception:
         return 0
+
+# --- qa_pairs repository helpers ---------------------------------------------------------------
+
+def repo_qa_insert(
+    *,
+    file_hash: str,
+    question_original: str,
+    question_norm: str,
+    question_hash: str,
+    answer: str | None = None,
+    meta: dict | None = None,
+) -> int:
+    """Insert new qa_pairs row and return its id."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        res = conn.execute(
+            text(
+                """
+                INSERT INTO qa_pairs (file_hash, question_original, question_norm, question_hash, answer, meta)
+                VALUES (:file_hash, :question_original, :question_norm, :question_hash, :answer, :meta)
+                """
+            ),
+            {
+                "file_hash": file_hash,
+                "question_original": question_original,
+                "question_norm": question_norm,
+                "question_hash": question_hash,
+                "answer": answer,
+                "meta": meta,
+            },
+        )
+        new_id = None
+        try:
+            new_id = int(getattr(res, "lastrowid", None) or 0) or None
+        except Exception:
+            new_id = None
+        if new_id is None:
+            try:
+                new_id = int(conn.execute(text("SELECT LAST_INSERT_ID() AS id")).scalar())
+            except Exception:
+                new_id = None
+        if new_id is None:
+            raise RuntimeError("Could not determine new qa_pairs id after insert")
+        return new_id
+
+
+def repo_qa_find_by_hash(*, file_hash: str, question_hash: str):
+    """Find qa_pairs row by file_hash + question_hash. Returns mapping or None."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, file_hash, question_original, question_norm, question_hash, answer, meta, created_at
+                FROM qa_pairs
+                WHERE file_hash = :file_hash AND question_hash = :question_hash
+                LIMIT 1
+                """
+            ),
+            {"file_hash": file_hash, "question_hash": question_hash},
+        ).mappings().first()
+    return row
