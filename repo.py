@@ -487,3 +487,46 @@ def repo_qa_find_by_hash(*, file_hash: str, question_hash: str):
             {"file_hash": file_hash, "question_hash": question_hash},
         ).mappings().first()
     return row
+
+
+# --- qa_embeddings repository helpers ----------------------------------------------------------
+
+def repo_qa_save_embedding(*, qa_id: int, model: str, dim: int, vec: bytes) -> None:
+    """Insert or update an embedding vector for a given QA id and model."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO qa_embeddings (qa_id, model, dim, vec)
+                VALUES (:qa_id, :model, :dim, :vec)
+                ON DUPLICATE KEY UPDATE
+                    dim = VALUES(dim),
+                    vec = VALUES(vec),
+                    created_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {"qa_id": qa_id, "model": model, "dim": dim, "vec": vec},
+        )
+
+
+def repo_embeddings_by_file(*, file_hash: str, model: str):
+    """Return list of embeddings (qa_id, dim, vec bytes) for a given file_hash and model."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT qe.qa_id AS qa_id, qe.dim AS dim, qe.vec AS vec
+                FROM qa_embeddings qe
+                JOIN qa_pairs qp ON qp.id = qe.qa_id
+                WHERE qp.file_hash = :file_hash AND qe.model = :model
+                """
+            ),
+            {"file_hash": file_hash, "model": model},
+        ).fetchall()
+    return rows
