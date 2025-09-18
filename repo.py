@@ -2,7 +2,10 @@ from __future__ import annotations
 from typing import Optional, Mapping
 from sqlalchemy import text
 from flask import current_app
+import json
+
 from sqlalchemy.exc import IntegrityError
+from services.models import QARecord
 
 
 class DuplicateEmailError(Exception):
@@ -424,6 +427,34 @@ def repo_count_admins() -> int:
 
 # --- qa_pairs repository helpers ---------------------------------------------------------------
 
+def _row_to_qarecord(row: Mapping | None) -> QARecord | None:
+    """Map a qa_pairs row mapping to a QARecord dataclass. Returns None if row is None."""
+    if row is None:
+        return None
+    # qa_pairs columns: id, file_hash, question_original, question_norm, question_hash, answer, meta, created_at
+    return QARecord(
+        id=int(row.get("id")) if row.get("id") is not None else None,
+        question=row.get("question_original") or "",
+        question_norm=row.get("question_norm") or "",
+        question_hash=row.get("question_hash") or "",
+        answer=row.get("answer"),
+        file_hash=row.get("file_hash"),
+        embedding=None,
+        embed_model=None,
+        created_at=row.get("created_at"),
+        updated_at=row.get("created_at"),  # fallback when updated_at not present
+    )
+
+def _to_db_json(value):
+    """Return a JSON-encoded string if value is a dict/list, else return as-is.
+    MySQL/PyMySQL cannot bind Python dicts directly; JSON columns expect a string.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return value
+
 def repo_qa_insert(
     *,
     file_hash: str,
@@ -451,7 +482,7 @@ def repo_qa_insert(
                 "question_norm": question_norm,
                 "question_hash": question_hash,
                 "answer": answer,
-                "meta": meta,
+                "meta": _to_db_json(meta),
             },
         )
         new_id = None
@@ -469,8 +500,8 @@ def repo_qa_insert(
         return new_id
 
 
-def repo_qa_find_by_hash(*, file_hash: str, question_hash: str):
-    """Find qa_pairs row by file_hash + question_hash. Returns mapping or None."""
+def repo_qa_find_by_hash(*, file_hash: str, question_hash: str) -> QARecord | None:
+    """Find a qa_pairs row by file_hash + question_hash. Returns QARecord or None."""
     engine = _get_engine_from_app()
     if engine is None:
         raise RuntimeError("DB engine not configured on current_app")
@@ -486,7 +517,7 @@ def repo_qa_find_by_hash(*, file_hash: str, question_hash: str):
             ),
             {"file_hash": file_hash, "question_hash": question_hash},
         ).mappings().first()
-    return row
+    return _row_to_qarecord(row)
 
 
 # --- qa_embeddings repository helpers ----------------------------------------------------------

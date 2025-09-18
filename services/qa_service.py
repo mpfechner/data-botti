@@ -14,6 +14,8 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 import threading
 
+from services.models import QueryRequest, QARecord
+
 MODEL_NAME = "distiluse-base-multilingual-cased-v2"
 
 _model: Optional[SentenceTransformer] = None
@@ -113,9 +115,21 @@ def save_qa(
     )
 
 
-def find_exact_qa(file_hash: str, question_hash: str) -> Optional[Dict[str, Any]]:
+def find_exact_qa(file_hash: str, question_hash: str) -> Optional[QARecord]:
     """
     Look up exact match in qa_pairs by file_hash + question_hash.
-    Returns dict row or None.
+    Returns QARecord or None.
     """
     return repo_qa_find_by_hash(file_hash=file_hash, question_hash=question_hash)
+
+
+def make_query_request(question_raw: str, file_hash: str | None = None) -> QueryRequest:
+    """Build a QueryRequest dataclass from raw question + file_hash."""
+    q_norm = normalize_question(question_raw)
+    q_hash = hash_question(q_norm)
+    return QueryRequest(
+        question_raw=question_raw,
+        question_norm=q_norm,
+        question_hash=q_hash,
+        file_hash=file_hash,
+    )
