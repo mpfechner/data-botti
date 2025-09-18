@@ -14,7 +14,8 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 import threading
 
-from services.models import QueryRequest, QARecord
+from services.ai_client import ask_model
+from services.models import QueryRequest, QARecord, TokenUsage
 
 MODEL_NAME = "distiluse-base-multilingual-cased-v2"
 
@@ -133,3 +134,14 @@ def make_query_request(question_raw: str, file_hash: str | None = None) -> Query
         question_hash=q_hash,
         file_hash=file_hash,
     )
+
+def call_llm_and_record(request: QueryRequest, *, model: str = "gpt-4o-mini", max_tokens: int = 800, temperature: float | None = None) -> str:
+    """Call the LLM via ai_client.ask_model and attach TokenUsage to the QueryRequest."""
+    content, usage = ask_model(
+        prompt=request.question_raw,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    request.token_usage = usage
+    return content

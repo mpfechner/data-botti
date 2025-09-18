@@ -4,6 +4,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, List
 
+@dataclass(slots=True)
+class TokenUsage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
 # Persistentes DB-Modell (qa_pairs)
 @dataclass(slots=True)
 class QARecord:
@@ -27,3 +33,4 @@ class QueryRequest:
     file_hash: Optional[str] = None
     top_k: int = 5
     created_at: datetime = field(default_factory=datetime.utcnow)
+    token_usage: Optional[TokenUsage] = None

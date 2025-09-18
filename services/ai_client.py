@@ -17,6 +17,8 @@ from infra.config import get_config
 import logging
 logger = logging.getLogger(__name__)
 
+from services.models import TokenUsage
+
 # Local router deciding the cheapest suitable model
 from .ai_router import choose_model  # local router deciding the cheapest suitable model
 
@@ -39,7 +41,7 @@ def _estimate_cache_ratio(context_id: Optional[str]) -> float:
     return 0.0 if not context_id else 0.9  # assume high reuse if an id is present
 
 
-def call_model(*, model: str, messages: list[dict], max_tokens: int = 800, temperature: float | None = None) -> str:
+def call_model(*, model: str, messages: list[dict], max_tokens: int = 800, temperature: float | None = None) -> tuple[str, TokenUsage]:
     """Low-level call: send chat messages to a specific model and return textual content."""
     config = get_config()
     openai_key = config["OPENAI_API_KEY"] or config["OPENAI_API_KEY_BOTTI"]
@@ -70,6 +72,16 @@ def call_model(*, model: str, messages: list[dict], max_tokens: int = 800, tempe
                 params["temperature"] = float(temperature)
 
         resp = client.chat.completions.create(**params)
+
+        usage = TokenUsage()
+        try:
+            if hasattr(resp, "usage"):
+                u = resp.usage
+                usage.prompt_tokens = getattr(u, "prompt_tokens", 0) or 0
+                usage.completion_tokens = getattr(u, "completion_tokens", 0) or 0
+                usage.total_tokens = getattr(u, "total_tokens", 0) or usage.prompt_tokens + usage.completion_tokens
+        except Exception:
+            pass
 
         # --- Debug: write raw response to file ---
         try:
@@ -126,14 +138,15 @@ def call_model(*, model: str, messages: list[dict], max_tokens: int = 800, tempe
                 content = (resp.get("output_text") or "").strip()
 
         if not content:
-            return "(AI returned no textual content. Bitte versuche es erneut oder erhöhe die erwartete Ausgabelänge.)"
-        return content
+            return "(AI returned no textual content. Bitte versuche es erneut oder erhöhe die erwartete Ausgabelänge.)", usage
+        return content, usage
 
     except ModuleNotFoundError as e:
+        usage = TokenUsage()
         return (
             f"(AI error) OpenAI client library not installed: {e}. "
             f"Model chosen: {model}. Please `pip install openai` to enable real calls."
-        )
+        ), usage
     except Exception as e:
         raise e
 
@@ -144,7 +157,7 @@ def ask_model(
     expected_output: str = "medium",
     context_id: Optional[str] = None,
     **kwargs: Any,
-) -> str:
+) -> tuple[str, TokenUsage]:
     """
     Minimal façade for calling an LLM.
 
@@ -209,7 +222,7 @@ def ask_model(
         {"role": "user", "content": prompt},
     ]
 
-    content = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=temperature)
+    content, usage = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=temperature)
 
     if content.startswith("(AI error)") or content.startswith("(AI returned no textual content"):
         # One retry with larger budget and a safer fast model for short tasks
@@ -217,15 +230,15 @@ def ask_model(
             fallback_model = model
             if expected_output == "short" and not str(model).startswith("gpt-4o-mini"):
                 fallback_model = "gpt-4o-mini"
-            content2 = call_model(
+            content2, usage2 = call_model(
                 model=fallback_model,
                 messages=messages,
                 max_tokens=max(max_tokens, 600),
                 temperature=temperature,
             )
             if content2 and not content2.startswith("(AI error)"):
-                return content2
+                return content2, usage2
         except Exception:
             pass
 
-    return content
+    return content, usage
