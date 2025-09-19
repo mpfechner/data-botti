@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, current_app, session, redirect, url_for
+from sqlalchemy import text
 from services.ai_client import ask_model, call_model
 from services.ai_router import choose_model
 from services.ai_tasks import build_relevant_columns_prompt
@@ -326,6 +327,38 @@ def ai_prompt(dataset_id):
         )
 
     return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id, ai_consent=ai_consent)
+
+
+@assistant_bp.route("/search", methods=["GET"])
+def search_page():
+    """Render search page with a dropdown of recent datasets (id, name, optional file_hash)."""
+    engine = current_app.config.get("DB_ENGINE")
+    datasets = []
+    try:
+        if engine is not None:
+            with engine.begin() as conn:
+                rows = conn.execute(
+                    text("""
+                        SELECT id, filename
+                        FROM datasets
+                        ORDER BY upload_date DESC, id DESC
+                        LIMIT 100
+                    """)
+                ).mappings().all()
+                for r in rows:
+                    ds_id = int(r.get("id"))
+                    ds_name = r.get("filename") or f"Dataset #{ds_id}"
+                    meta = get_latest_dataset_file(conn, ds_id)
+                    file_hash = None
+                    if meta:
+                        try:
+                            file_hash = meta.get("file_hash") if isinstance(meta, dict) else meta["file_hash"]
+                        except Exception:
+                            file_hash = None
+                    datasets.append({"id": ds_id, "name": ds_name, "file_hash": file_hash})
+    except Exception:
+        current_app.logger.exception("Failed to load datasets for /search page")
+    return render_template("search.html", datasets=datasets)
 
 
 @assistant_bp.route("/ai/revoke", methods=["POST"])

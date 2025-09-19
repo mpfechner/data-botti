@@ -17,12 +17,14 @@
     <p>Dein KI-Assistent für die Analyse von CSV-Daten.</p>
     <p>
         <form action="{{ url_for('auth.login') }}" method="get">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn-login">Zum Login</button>
         </form>
     </p>
     {% if session.get('user_id') %}
     <p>
         <form action="{{ url_for('app_dashboard') }}" method="get">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn-login">Zur App</button>
         </form>
     </p>

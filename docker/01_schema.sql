@@ -51,6 +51,16 @@ CREATE TABLE IF NOT EXISTS datasets (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS datasets_groups (
+    dataset_id INT NOT NULL,
+    group_id INT NOT NULL,
+    granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (dataset_id, group_id),
+    KEY idx_datasets_groups_group (group_id),
+    CONSTRAINT fk_datasets_groups_dataset FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE,
+    CONSTRAINT fk_datasets_groups_group FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS prompts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     dataset_id INT,
@@ -146,3 +156,4 @@ CREATE TABLE IF NOT EXISTS token_usage (
   meta JSON NULL,
   KEY idx_tokenusage_ts (ts DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

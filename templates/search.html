@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; max-width: 880px; background: #fff; }
+  .row { display: flex; gap: 12px; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label { min-width: 150px; font-weight: 600; }
+  select, input[type="text"], textarea { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+  button { padding: 10px 14px; border: 0; border-radius: 6px; cursor: pointer; }
+  .primary { background: #3a6df0; color: #fff; }
+  .hint { color: #555; font-size: 0.9rem; }
+</style>
+
+<h2>Frage stellen</h2>
+<form id="ask-form" method="post">
+  {{ csrf_field() }}
+  <div class="card">
+    <div class="row">
+      <label for="dataset_select">Dataset</label>
+      <select id="dataset_select" name="dataset_id" required>
+        <option value="">Bitte Dataset auswählen…</option>
+        {% for ds in datasets %}
+          <option value="{{ ds.id }}" data-file-hash="{{ ds.file_hash or '' }}">
+            {{ ds.name or ('Dataset #' ~ ds.id) }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="prompt">Frage</label>
+      <textarea id="prompt" name="prompt" rows="4" placeholder="Frag mich was zu deinem Datensatz…" required></textarea>
+    </div>
+
+    <div class="row">
+      <label for="file_hash">Scope-Hash (optional)</label>
+      <input id="file_hash" name="file_hash" type="text" placeholder="eigener Datei-Hash; leer = Standard-Hash des gewählten Datasets" />
+    </div>
+
+    <div class="row">
+      <span class="hint">Hinweis: Wenn die Frage bereits für das gewählte Dataset existiert, wird die Antwort 💾 aus dem Verlauf wiederverwendet.</span>
+    </div>
+
+    <div class="row" style="justify-content: flex-end;">
+      <button class="primary" type="submit">Senden</button>
+    </div>
+  </div>
+</form>
+
+<script>
+  const form = document.getElementById('ask-form');
+  const sel = document.getElementById('dataset_select');
+  const fileHashInput = document.getElementById('file_hash');
+
+  // Wenn kein eigener Scope-Hash eingegeben wird, kann (optional) der Standard-Hash des Datasets verwendet werden
+  sel.addEventListener('change', () => {
+    const opt = sel.options[sel.selectedIndex];
+    const defaultHash = opt ? opt.getAttribute('data-file-hash') : '';
+    if (!fileHashInput.value && defaultHash) {
+      // Hinweis: wir füllen NICHT automatisch, lassen aber die Info im title
+      fileHashInput.placeholder = `leer = Standard-Hash (${defaultHash})`;
+      fileHashInput.title = `Standard-Hash des Datasets: ${defaultHash}`;
+    } else {
+      fileHashInput.placeholder = 'eigener Datei-Hash; leer = Standard-Hash des gewählten Datasets';
+      fileHashInput.title = '';
+    }
+  });
+
+  form.addEventListener('submit', function (e) {
+    const ds = sel.value.trim();
+    if (!ds) { e.preventDefault(); alert('Bitte ein Dataset auswählen.'); return; }
+    // Zielroute dynamisch auf /ai/<dataset_id>
+    form.action = `/ai/${encodeURIComponent(ds)}`;
+  });
+</script>
+{% endblock %}

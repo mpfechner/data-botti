@@ -10,6 +10,7 @@
     <p>Die KI-Funktion analysiert die übermittelten Daten mithilfe externer Dienste. Möchten Sie fortfahren?</p>
     <div style="margin-top:16px;">
       <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="display:inline;">
+        {{ csrf_field() }}
         <input type="hidden" name="consent" value="1">
         <button type="submit" id="ai-optin-accept" class="btn btn-primary">Ja, fortfahren</button>
       </form>
@@ -107,12 +108,14 @@ document.addEventListener("DOMContentLoaded", function() {
 
 {% if ai_consent %}
 <form method="post" action="{{ url_for('assistant.revoke_ai_consent', dataset_id=dataset_id) }}" style="float:right; margin-top:8px;">
+  {{ csrf_field() }}
   <button type="submit" class="btn btn-link" style="padding:0;">Einwilligung widerrufen</button>
 </form>
 <div style="clear:both;"></div>
 <h1>AI Assistant für {{ filename }}</h1>
 
 <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="margin-top:12px;">
+  {{ csrf_field() }}
   <input type="hidden" id="expected_output" name="expected_output" value="medium">
   <input type="hidden" id="task" name="task" value="">
   <div class="btn-group" style="margin:8px 0; display:flex; gap:8px; flex-wrap:wrap;">
