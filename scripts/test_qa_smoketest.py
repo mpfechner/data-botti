@@ -1,6 +1,17 @@
-# scripts/qa_smoketest.py
-from app import app
+# scripts/test_qa_smoketest.py
+import sys, os
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_APP_ROOT = os.path.dirname(_HERE)
+if _APP_ROOT not in sys.path:
+    sys.path.insert(0, _APP_ROOT)
+try:
+    from app import app as app
+except Exception:
+    from app import create_app  # type: ignore
+    app = create_app()
+
 from services.qa_service import normalize_question, hash_question, save_qa, find_exact_qa
+from services.models import QARecord
 
 def main():
     # App-Context aktivieren
@@ -32,7 +43,13 @@ def main():
         # Exact-Match Lookup
         if qa_id:
             row = find_exact_qa(file_hash=file_hash, question_hash=qh)
-            print("Found:", dict(row) if row else None)
+            if row:
+                if isinstance(row, QARecord):
+                    print("Found:", {"id": row.id, "file_hash": row.file_hash, "question": row.question})
+                else:
+                    print("Found:", dict(row))
+            else:
+                print("Found:", None)
 
         # Duplicate-Test
         try:

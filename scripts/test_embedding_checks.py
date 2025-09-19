@@ -1,6 +1,6 @@
 
 
-# scripts/embedding_checks.py
+# scripts/test_embedding_checks.py
 import os
 import sys
 
@@ -19,6 +19,7 @@ except Exception:
     from app import app as flask_app
 
 import numpy as np
+from services.models import QARecord
 from services.qa_service import (
     normalize_question,
     hash_question,
@@ -45,7 +46,7 @@ def ensure_qa(file_hash: str, question: str) -> int:
     qh = hash_question(qn)
     row = find_exact_qa(file_hash=file_hash, question_hash=qh)
     if row:
-        return int(row["id"])
+        return int(row.id) if isinstance(row, QARecord) else int(row["id"])
     return int(
         save_qa(
             file_hash=file_hash,

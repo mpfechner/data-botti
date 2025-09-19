@@ -15,7 +15,7 @@ import numpy as np
 import threading
 
 from services.ai_client import ask_model
-from services.models import QueryRequest, QARecord, TokenUsage
+from services.models import QueryRequest, QARecord, TokenUsage, MatchResults
 
 MODEL_NAME = "distiluse-base-multilingual-cased-v2"
 
@@ -145,3 +145,37 @@ def call_llm_and_record(request: QueryRequest, *, model: str = "gpt-4o-mini", ma
     )
     request.token_usage = usage
     return content
+
+
+# New orchestrate function
+def orchestrate(request: QueryRequest) -> MatchResults:
+    """Orchestrate QA flow: try exact, else call LLM and save new QA."""
+    # Try exact match first
+    if request.file_hash:
+        rec = find_exact_qa(file_hash=request.file_hash, question_hash=request.question_hash)
+        if rec:
+            request.decision = "exact"
+            request.badges.append("exact")
+            return MatchResults(mode="exact", records=[rec], top_k=1, took_ms=0.0)
+
+    # Fallback: call LLM and save new QA
+    answer = call_llm_and_record(request)
+    qa_id = save_qa(
+        file_hash=request.file_hash or "unknown",
+        question_original=request.question_raw,
+        question_norm=request.question_norm,
+        question_hash=request.question_hash,
+        answer=answer,
+        meta={"source": "orchestrate"},
+    )
+    rec_new = QARecord(
+        id=qa_id,
+        question=request.question_raw,
+        question_norm=request.question_norm,
+        question_hash=request.question_hash,
+        answer=answer,
+        file_hash=request.file_hash,
+    )
+    request.decision = "llm"
+    request.badges.append("llm")
+    return MatchResults(mode="llm", records=[rec_new], top_k=1, took_ms=0.0)

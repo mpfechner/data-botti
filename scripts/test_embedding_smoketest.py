@@ -2,6 +2,7 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app import app as flask_app
+from services.models import QARecord
 from services.qa_service import (
     normalize_question,
     hash_question,
@@ -22,7 +23,7 @@ def main():
         # 1) Insert (idempotent – nur anlegen, wenn noch nicht vorhanden)
         row = find_exact_qa(file_hash=file_hash, question_hash=qh)
         if row:
-            qa_id = row["id"]
+            qa_id = int(row.id) if isinstance(row, QARecord) else int(row["id"])  # compatible with QARecord or Mapping
             print(f"Reusing existing QA id: {qa_id}")
         else:
             qa_id = save_qa(
