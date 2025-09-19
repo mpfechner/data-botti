@@ -13,6 +13,13 @@
 <div style="white-space:pre-wrap;border:1px solid #ddd;padding:12px;border-radius:6px;background:#fafafa;min-height:2em;">
   {{ result }}
 </div>
+{% if decision %}
+<div style="margin-top:8px;">
+  <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#eef;">
+    💾 {{ 'aus Verlauf' if decision == 'exact' else 'neu generiert' }}
+  </span>
+</div>
+{% endif %}
 
 <div style="margin-top:16px;display:flex;gap:8px;">
   <a class="btn btn-primary" href="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}">Neue Anfrage</a>

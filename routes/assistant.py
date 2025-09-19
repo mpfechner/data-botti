@@ -11,6 +11,7 @@ from helpers import (
     summarize_columns_for_selection,
     build_cross_column_overview,
 )
+from services.qa_service import make_query_request, find_exact_qa, save_qa
 from datetime import datetime, timedelta, timezone
 import pandas as _pd
 
@@ -283,13 +284,45 @@ def ai_prompt(dataset_id):
         max_tokens = _mt_map.get(_eo, 900)
         current_app.logger.info("Token budget: model=%s eo=%s max_tokens=%s", model, _eo, max_tokens)
 
-        result = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=0.2)
+        # Try to reuse an exact answer first (by normalized question hash per dataset/file)
+        file_hash = None
+        try:
+            # Prefer meta-provided hash if available; else fall back to dataset id namespace
+            file_hash = (meta.get("file_hash") if isinstance(meta, dict) else None) or f"dataset-{dataset_id}"
+        except Exception:
+            file_hash = f"dataset-{dataset_id}"
+
+        req = make_query_request(prompt, file_hash)
+        exact = find_exact_qa(file_hash=file_hash, question_hash=req.question_hash)
+        if exact and getattr(exact, "answer", None):
+            current_app.logger.info("Reusing exact QA id=%s for dataset_id=%s", exact.id, dataset_id)
+            result_text = exact.answer
+            decision_badge = "exact"
+        else:
+            # No exact match → call the model with the carefully built two-stage prompt
+            result_text, usage = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=0.2)
+            decision_badge = "llm"
+            try:
+                # Persist Q&A for future reuse
+                qa_id = save_qa(
+                    file_hash=file_hash,
+                    question_original=req.question_raw,
+                    question_norm=req.question_norm,
+                    question_hash=req.question_hash,
+                    answer=result_text,
+                    meta={"source": "assistant.ai_prompt", "model": str(model)},
+                )
+                current_app.logger.info("Saved new QA id=%s for dataset_id=%s", qa_id, dataset_id)
+            except Exception:
+                current_app.logger.exception("Failed to save QA after LLM call")
+
         return render_template(
             "ai_result.html",
-            result=result,
+            result=result_text,
             filename=filename,
             dataset_id=dataset_id,
             prompt=prompt,
+            decision=decision_badge,
         )
 
     return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id, ai_consent=ai_consent)
