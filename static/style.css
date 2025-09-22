@@ -107,28 +107,13 @@ a:hover {
     margin-right: 0.25rem;
 }
 
-.header {
-    display: flex;
-    align-items: center;
-    padding: 10px;
-}
-
 .landing .header {
     justify-content: center;
     padding: 14px 10px;
     margin-bottom: 12px;
 }
 
-.logo-container img.logo {
-    height: 60px; /* Logo kleiner */
-    margin-right: 10px;
-}
-
 .landing .logo-container img.logo { height: 90px; }
-
-.logo-container img.logo-text {
-    height: 30px; /* Schriftzug anpassen */
-}
 
 .landing .logo-container img.logo-text { height: 42px; }
 
@@ -400,4 +385,60 @@ a:hover {
   gap: 0.5rem;
   margin: 1rem 0;
   font-size: 0.95rem;
+}
+
+/* ==========================
+   Header & Navigation (consolidated)
+   ========================== */
+.header { display: flex; align-items: center; padding: 10px; gap: 1rem; flex-wrap: wrap; }
+
+.header .logo-container { display: flex; align-items: center; gap: 0.5rem; }
+
+/* Logo sizing */
+.header .logo-container img.logo { height: 60px; margin-right: 10px; }
+.header .logo-container img.logo-text { height: 30px; }
+
+/* Right area: buttons on one row, username below */
+.header .nav-area { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.header .nav-area .nav-buttons { display: flex; align-items: center; gap: 8px; }
+.header .nav-area .nav-buttons form { margin: 0; display: flex; align-items: center; }
+
+/* Use base .btn; unify sizing for header buttons */
+.header .nav-area .nav-buttons .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  line-height: 1;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+/* Normalize native button elements to match anchor .btn sizing */
+.header .nav-area .nav-buttons button.btn {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  border: 1px solid #ccc; /* match anchor buttons */
+  border-radius: 4px;
+  padding: 8px 12px;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.header .nav-area .nav-buttons a.btn { text-decoration: none; }
+
+/* Distinct logout look */
+.header .nav-area .nav-buttons .btn-logout { background: #15807a; color: #fff; border: 1px solid #15807a; }
+.header .nav-area .nav-buttons .btn-logout:hover { filter: brightness(0.95); }
+
+/* Username line under the buttons */
+.header .nav-area .user-info-line { font-size: 0.95rem; color: #2b445a; opacity: 0.9; white-space: nowrap; }
+
+/* Fallback: user info as direct flex item under header */
+.header > .user-info-line {
+  width: 100%;
+  text-align: right;
 }

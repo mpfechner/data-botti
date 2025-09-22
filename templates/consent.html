@@ -20,6 +20,7 @@
             <h1>Datennutzung zustimmen</h1>
             <p>Bitte bestätige, dass deine Fragen und Antworten gespeichert und verarbeitet werden dürfen.</p>
             <form method="post" action="{{ url_for('auth.consent') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <label class="checkbox">
                     <input type="checkbox" name="consent" value="yes" required>
                     Ich stimme der Speicherung und Verarbeitung meiner Daten zu.

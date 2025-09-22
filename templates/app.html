@@ -14,6 +14,21 @@
             <div>
                 <input type="file" name="file" accept=".csv" required class="styled-input">
             </div>
+            {% if groups %}
+            <div class="group-selection">
+                <p>Select groups to share this dataset with:</p>
+                {% for g in groups %}
+                <label>
+                    <input type="checkbox" name="group_ids" value="{{ g.id }}">
+                    {{ g.name }}
+                </label><br>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="group-selection">
+                <p><em>No groups available – dataset will only be visible to you.</em></p>
+            </div>
+            {% endif %}
             <div>
                 <button type="submit">Upload and Analyze</button>
             </div>

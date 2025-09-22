@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, current_app, request, redirect, url_for, flash
+from flask import Blueprint, render_template, current_app, request, redirect, url_for, flash, session
 import os
 from services import storage
 from services.dataset_service import analyze_dataset as analyze_dataset_service
@@ -14,7 +14,21 @@ def upload_dataset():
     if not file.filename.lower().endswith('.csv'):
         return render_template('app.html', error="Nur .csv-Dateien sind erlaubt.")
 
-    dataset_id, is_new = storage.save_uploaded_file(file, current_app.config["DB_ENGINE"])
+    # Read selected groups from the upload form (checkboxes named "group_ids")
+    group_ids = request.form.getlist("group_ids")
+    # Determine current user id (Flask-Login may also set session["user_id"])
+    user_id = session.get("user_id")
+
+    try:
+        dataset_id, is_new = storage.save_uploaded_file(
+            file,
+            current_app.config["DB_ENGINE"],
+            user_id=user_id,
+            group_ids=group_ids,
+        )
+    except ValueError as e:
+        # Group validation failed or bad input – stay on the page and show the error
+        return render_template('app.html', error=str(e))
     if not is_new:
         flash("Diese Datei liegt bereits vor – vorhandenes Dataset wurde geöffnet.", "info")
     return redirect(url_for("datasets.analyze_dataset", dataset_id=dataset_id))

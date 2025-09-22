@@ -337,14 +337,62 @@ def search_page():
     try:
         if engine is not None:
             with engine.begin() as conn:
-                rows = conn.execute(
-                    text("""
-                        SELECT id, filename
-                        FROM datasets
-                        ORDER BY upload_date DESC, id DESC
+                # resolve current user id
+                uid = None
+                try:
+                    from flask_login import current_user  # type: ignore
+                    if getattr(current_user, "is_authenticated", False):
+                        uid = int(getattr(current_user, "id"))
+                except Exception:
+                    pass
+                if uid is None:
+                    uid = session.get("user_id")
+                # fetch user's group ids
+                gids: list[int] = []
+                if uid is not None:
+                    try:
+                        g_rows = conn.execute(
+                            text("SELECT group_id FROM user_groups WHERE user_id = :uid"),
+                            {"uid": int(uid)},
+                        ).all()
+                        gids = [int(x[0]) for x in g_rows]
+                    except Exception:
+                        current_app.logger.exception("Failed to load user groups for /search")
+
+                if uid is None:
+                    # no user context → show nothing (empty list)
+                    rows = []
+                elif gids:
+                    # Build parameterized IN clause for group ids
+                    gid_params = {f"gid{i}": g for i, g in enumerate(gids)}
+                    in_clause = ",".join(f":{k}" for k in gid_params.keys())
+                    sql = text(
+                        f"""
+                        SELECT DISTINCT d.id, d.filename
+                        FROM datasets d
+                        LEFT JOIN datasets_groups dg ON dg.dataset_id = d.id
+                        WHERE d.user_id = :uid OR (dg.group_id IN ({in_clause}))
+                        ORDER BY d.upload_date DESC, d.id DESC
                         LIMIT 100
-                    """)
-                ).mappings().all()
+                        """
+                    )
+                    params = {"uid": int(uid), **gid_params}
+                    rows = conn.execute(sql, params).mappings().all()
+                else:
+                    # user has no groups → only own datasets
+                    rows = conn.execute(
+                        text(
+                            """
+                            SELECT d.id, d.filename
+                            FROM datasets d
+                            WHERE d.user_id = :uid
+                            ORDER BY d.upload_date DESC, d.id DESC
+                            LIMIT 100
+                            """
+                        ),
+                        {"uid": int(uid)},
+                    ).mappings().all()
+
                 for r in rows:
                     ds_id = int(r.get("id"))
                     ds_name = r.get("filename") or f"Dataset #{ds_id}"
