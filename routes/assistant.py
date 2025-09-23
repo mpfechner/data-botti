@@ -12,7 +12,8 @@ from helpers import (
     summarize_columns_for_selection,
     build_cross_column_overview,
 )
-from services.qa_service import make_query_request, find_exact_qa, save_qa
+from services.qa_service import make_query_request, save_qa
+from services.search_service import SearchService
 from datetime import datetime, timedelta, timezone
 import pandas as _pd
 
@@ -294,17 +295,25 @@ def ai_prompt(dataset_id):
             file_hash = f"dataset-{dataset_id}"
 
         req = make_query_request(prompt, file_hash)
-        exact = find_exact_qa(file_hash=file_hash, question_hash=req.question_hash)
-        if exact and getattr(exact, "answer", None):
-            current_app.logger.info("Reusing exact QA id=%s for dataset_id=%s", exact.id, dataset_id)
-            result_text = exact.answer
+        # Orchestrated search/decision: exact → analysis → semantic/LLM
+        svc = SearchService()
+        rec = svc.search_orchestrated(req)
+        if rec is not None and getattr(rec, "answer", None):
+            current_app.logger.info("Reusing exact QA id=%s for dataset_id=%s", rec.id, dataset_id)
+            result_text = rec.answer
             decision_badge = "exact"
+        elif getattr(req, "decision", None) == "analysis":
+            # Placeholder analysis rendering; later replaced by real analytics pipeline
+            result_text = (
+                "📊 Analyse-Modus (Platzhalter) – Deine Anfrage wurde als Analyse erkannt. "
+                "Diese Funktion liefert demnächst Tabellen/Diagramme direkt aus dem Dataset."
+            )
+            decision_badge = "analysis"
         else:
-            # No exact match → call the model with the carefully built two-stage prompt
+            # Fallback: LLM generation with the prepared two-stage prompt
             result_text, usage = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=0.2)
             decision_badge = "llm"
             try:
-                # Persist Q&A for future reuse
                 qa_id = save_qa(
                     file_hash=file_hash,
                     question_original=req.question_raw,

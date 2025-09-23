@@ -112,3 +112,33 @@ class SearchService:
         request.intent_score = best_score
         # In future, store full scores dict in request.intent_scores if supported; keyword bias applied
         return request.intent
+
+    def search_orchestrated(self, request: QueryRequest) -> Optional[QARecord]:
+        """End-to-end routing: exact → (if analysis) analysis → else semantic → LLM (placeholders).
+        Returns a QARecord if an exact match was found; otherwise returns None for now.
+        Side effects: sets request.decision and may append badges.
+        """
+        # 1) Exact match first
+        rec = self.search_exact(request)
+        if rec is not None:
+            request.decision = "exact"
+            # Optional: mark badge for UI
+            if hasattr(request, "badges") and isinstance(request.badges, list):
+                request.badges.append("💾 aus Verlauf")
+            return rec
+
+        # 2) Intent detection (qa vs analysis)
+        intent = self.detect_intent(request)
+        if intent == "analysis":
+            # Placeholder: analysis pipeline would run here (group-by, charts, etc.)
+            request.decision = "analysis"
+            if hasattr(request, "badges") and isinstance(request.badges, list):
+                request.badges.append("📊 Analyse")
+            # For now, we return None and let the caller handle analysis rendering.
+            return None
+
+        # 3) Otherwise, proceed to semantic search (placeholder) and LLM fallback (outside this service)
+        request.decision = "semantic_or_llm"
+        if hasattr(request, "badges") and isinstance(request.badges, list):
+            request.badges.append("✨ neu generiert")
+        return None
