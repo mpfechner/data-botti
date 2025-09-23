@@ -15,9 +15,15 @@
 </div>
 {% if decision %}
 <div style="margin-top:8px;">
-  <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#eef;">
-    💾 {{ 'aus Verlauf' if decision == 'exact' else 'neu generiert' }}
-  </span>
+  {% if decision == 'exact' %}
+    <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#e8f4ff;border:1px solid #cfe7ff;">💾 aus Verlauf</span>
+  {% elif decision == 'analysis' %}
+    <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#e8fff0;border:1px solid #c7f0d8;">📊 Analyse</span>
+  {% elif decision == 'llm' or decision == 'semantic_or_llm' %}
+    <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#f6f0ff;border:1px solid #e5d9ff;">✨ neu generiert</span>
+  {% else %}
+    <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#eef;border:1px solid #dde;">ℹ️ {{ decision }}</span>
+  {% endif %}
 </div>
 {% endif %}
 

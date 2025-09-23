@@ -20,6 +20,7 @@
           <a href="{{ url_for('admin.list_users') }}" class="btn">Admin</a>
           {% endif %}
           <a href="/app" class="btn">Home</a>
+          <a href="{{ url_for('assistant.search_page') }}" class="btn">Search</a>
           {% if session.get('user_id') %}
           <form action="{{ url_for('auth.logout') }}" method="post">
           {{ csrf_field() }}
