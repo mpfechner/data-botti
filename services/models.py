@@ -44,3 +44,5 @@ class QueryRequest:
     token_usage: Optional[TokenUsage] = None
     decision: Optional[str] = None  # "exact" | "fuzzy" | "semantic" | "llm"
     badges: List[str] = field(default_factory=list)
+    intent: Optional[str] = None
+    intent_score: Optional[float] = None
