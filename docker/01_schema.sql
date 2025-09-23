@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS qa_pairs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- Embeddings zu Q&A (distiluse-base-multilingual-cased-v2 → 512-D)
+-- Embeddings zu Q&A (Sentence Embeddings; z. B. intfloat/multilingual-e5-base → 768‑D)
+--   Hinweis: `dim` ist variabel, `vec` enthält float32[dim]
 -- ============================================================
 CREATE TABLE IF NOT EXISTS qa_embeddings (
   qa_id INT NOT NULL,

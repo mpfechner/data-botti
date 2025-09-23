@@ -10,30 +10,18 @@ from repo import (
     repo_embeddings_by_file,
 )
 
-from sentence_transformers import SentenceTransformer
 import numpy as np
-import threading
+
+from services.embeddings import embed_query, embed_passage
 
 from services.ai_client import ask_model
 from services.models import QueryRequest, QARecord, TokenUsage, MatchResults
 
-MODEL_NAME = "distiluse-base-multilingual-cased-v2"
-
-_model: Optional[SentenceTransformer] = None
-_model_lock = threading.Lock()
-
-def get_embedding_model() -> SentenceTransformer:
-    global _model
-    if _model is None:
-        with _model_lock:
-            if _model is None:
-                _model = SentenceTransformer(MODEL_NAME)
-    return _model
-
+MODEL_NAME = "intfloat/multilingual-e5-base"
 
 def embed_question(text_norm: str) -> np.ndarray:
-    model = get_embedding_model()
-    return model.encode([text_norm])[0]
+    vec = embed_query(text_norm)
+    return np.asarray(vec, dtype=np.float32)
 
 
 def save_embedding(qa_id: int, vec: np.ndarray, model: str = MODEL_NAME) -> None:
