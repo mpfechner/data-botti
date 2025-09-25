@@ -198,6 +198,15 @@ a:hover {
 }
 .btn-primary:hover { filter: brightness(0.95); }
 
+.btn-outline-secondary {
+  background: #fff;
+  color: #007bff;
+  border: 1px solid #007bff;
+}
+.btn-outline-secondary:hover {
+  background: #f0f8ff;
+}
+
 /* ==========================
    Flash messages (alerts)
    ========================== */

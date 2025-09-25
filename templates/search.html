@@ -20,7 +20,7 @@
       <select id="dataset_select" name="dataset_id" required>
         <option value="">Bitte Dataset auswählen…</option>
         {% for ds in datasets %}
-          <option value="{{ ds.id }}" data-file-hash="{{ ds.file_hash or '' }}">
+          <option value="{{ ds.id }}" data-file-hash="{{ ds.file_hash or '' }}" {% if selected_dataset_id and ds.id == selected_dataset_id %}selected{% endif %}>
             {{ ds.name or ('Dataset #' ~ ds.id) }}
           </option>
         {% endfor %}
@@ -45,7 +45,40 @@
       <button class="primary" type="submit">Senden</button>
     </div>
   </div>
+
 </form>
+
+<div class="card" style="margin-top:20px;">
+  <h3>Verlauf (letzte Fragen)</h3>
+  {% if history and history|length > 0 %}
+    <ul>
+      {% for item in history %}
+        <li style="display:flex; gap:8px; align-items:center; justify-content:space-between;">
+          <div>
+            <strong title="{{ item.question_original }}">{{ item.question_original }}</strong>
+            <span style="color:#555; font-size:0.9rem; margin-left:6px;">
+              {{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at.__class__.__name__ != 'str' else item.created_at }}
+            </span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            {% if item.decision %}
+              {% if item.decision == 'exact' %}
+                <span class="chip" style="background:#e8f4ff;border:1px solid #cfe7ff;">💾 aus Verlauf</span>
+              {% elif item.decision == 'analysis' %}
+                <span class="chip" style="background:#e8fff0;border:1px solid #c7f0d8;">📊 Analyse</span>
+              {% elif item.decision in ['llm', 'semantic_or_llm'] %}
+                <span class="chip" style="background:#f6f0ff;border:1px solid #e5d9ff;">✨ neu generiert</span>
+              {% endif %}
+            {% endif %}
+            <a class="btn btn-link" href="{{ url_for('assistant.show_qa', qa_id=item.id) }}" title="Antwort anzeigen">Antwort anzeigen</a>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="hint">Noch keine Fragen für dieses Dataset gestellt.</p>
+  {% endif %}
+</div>
 
 <script>
   const form = document.getElementById('ask-form');
@@ -63,6 +96,13 @@
     } else {
       fileHashInput.placeholder = 'eigener Datei-Hash; leer = Standard-Hash des gewählten Datasets';
       fileHashInput.title = '';
+    }
+    // Reload /search with ?dataset_id=<id> to populate history for the chosen dataset
+    const selectedId = sel.value;
+    if (selectedId) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('dataset_id', selectedId);
+      window.location.href = url.toString();
     }
   });
 

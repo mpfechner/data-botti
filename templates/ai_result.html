@@ -29,6 +29,11 @@
 
 <div style="margin-top:16px;display:flex;gap:8px;">
   <a class="btn btn-primary" href="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}">Neue Anfrage</a>
-  <a class="btn" href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}">Zurück zur Analyse</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}">Zurück zur Analyse</a>
+  <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="display:inline;">
+    {{ csrf_field() }}
+    <input type="hidden" name="prompt" value="{{ prompt }}">
+    <button class="btn btn-outline-secondary" type="submit" title="Frage mit aktueller Logik neu berechnen">Neu berechnen</button>
+  </form>
 </div>
 {% endblock %}
