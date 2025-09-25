@@ -425,6 +425,9 @@ def search_page():
 
                 # Additional logic: get dataset_id from request.args and fetch history and filename
                 dataset_id = request.args.get("dataset_id", type=int)
+                # Optional timeframe filter for history: days = '7' | '30' | None (all)
+                days_param = request.args.get("days", type=str)
+                selected_days = days_param if days_param in ("7", "30") else None
                 if dataset_id:
                     # Fetch last 5 questions for this dataset
                     # First, get the file_hash for this dataset
@@ -444,32 +447,35 @@ def search_page():
                     current_filename = row.get("filename") if row else None
                     # Legacy fallback hash used in earlier saves
                     legacy_hash = f"dataset-{dataset_id}"
+                    # Build optional date filter
+                    date_clause = " AND created_at >= (NOW() - INTERVAL :days DAY)" if selected_days else ""
+
                     # Build parameters depending on availability of real file_hash
                     if file_hash:
                         q_rows = conn.execute(
                             text(
-                                """
+                                f"""
                                 SELECT id, question_original, created_at
                                 FROM qa_pairs
-                                WHERE file_hash IN (:fh, :legacy)
+                                WHERE file_hash IN (:fh, :legacy){date_clause}
                                 ORDER BY created_at DESC
                                 LIMIT 5
                                 """
                             ),
-                            {"fh": file_hash, "legacy": legacy_hash},
+                            ( {"fh": file_hash, "legacy": legacy_hash, "days": int(selected_days)} if selected_days else {"fh": file_hash, "legacy": legacy_hash} ),
                         ).mappings().all()
                     else:
                         q_rows = conn.execute(
                             text(
-                                """
+                                f"""
                                 SELECT id, question_original, created_at
                                 FROM qa_pairs
-                                WHERE file_hash = :legacy
+                                WHERE file_hash = :legacy{date_clause}
                                 ORDER BY created_at DESC
                                 LIMIT 5
                                 """
                             ),
-                            {"legacy": legacy_hash},
+                            ( {"legacy": legacy_hash, "days": int(selected_days)} if selected_days else {"legacy": legacy_hash} ),
                         ).mappings().all()
 
                     history = [
@@ -493,6 +499,7 @@ def search_page():
         history=history,
         current_filename=current_filename,
         selected_dataset_id=dataset_id,
+        selected_days=selected_days or 'all',
     )
 
 

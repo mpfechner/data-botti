@@ -9,6 +9,7 @@
   button { padding: 10px 14px; border: 0; border-radius: 6px; cursor: pointer; }
   .primary { background: #3a6df0; color: #fff; }
   .hint { color: #555; font-size: 0.9rem; }
+  .chip.active { background:#e8f4ff; }
 </style>
 
 <h2>Frage stellen</h2>
@@ -50,6 +51,14 @@
 
 <div class="card" style="margin-top:20px;">
   <h3>Verlauf (letzte Fragen)</h3>
+  <div class="chips" style="margin-top:4px; display:flex; gap:8px; align-items:center;">
+    <span class="hint">Zeitraum:</span>
+    {# default days to 'all' if not provided #}
+    {% set _days = selected_days if selected_days is not none else 'all' %}
+    <a class="chip{% if _days == '7' %} active{% endif %}" href="{{ url_for('assistant.search_page') }}?dataset_id={{ selected_dataset_id }}&days=7" style="padding:4px 10px; border-radius:14px; border:1px solid #cfe7ff; background:#fff; text-decoration:none;">7 Tage</a>
+    <a class="chip{% if _days == '30' %} active{% endif %}" href="{{ url_for('assistant.search_page') }}?dataset_id={{ selected_dataset_id }}&days=30" style="padding:4px 10px; border-radius:14px; border:1px solid #cfe7ff; background:#fff; text-decoration:none;">30 Tage</a>
+    <a class="chip{% if _days == 'all' %} active{% endif %}" href="{{ url_for('assistant.search_page') }}?dataset_id={{ selected_dataset_id }}" style="padding:4px 10px; border-radius:14px; border:1px solid #cfe7ff; background:#fff; text-decoration:none;">Alle</a>
+  </div>
   {% if history and history|length > 0 %}
     <ul>
       {% for item in history %}
