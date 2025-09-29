@@ -561,3 +561,38 @@ def repo_embeddings_by_file(*, file_hash: str, model: str):
             {"file_hash": file_hash, "model": model},
         ).fetchall()
     return rows
+
+
+# --- semantic candidates helper ---------------------------------------------------------------
+
+def repo_qa_semantic_candidates(*, file_hash: str, model: str):
+    """Return list of (QARecord, dim, vec_bytes) for given file_hash and embedding model.
+
+    Joins qa_pairs with qa_embeddings to fetch the question/answer context + stored embedding vector.
+    The vector is returned as raw bytes; the caller is responsible for decoding to numpy array.
+    """
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT
+                    qp.id, qp.file_hash, qp.question_original, qp.question_norm,
+                    qp.question_hash, qp.answer, qp.meta, qp.created_at,
+                    qe.dim AS dim, qe.vec AS vec
+                FROM qa_pairs qp
+                JOIN qa_embeddings qe ON qe.qa_id = qp.id
+                WHERE qp.file_hash = :file_hash AND qe.model = :model
+                ORDER BY qp.id DESC
+                """
+            ),
+            {"file_hash": file_hash, "model": model},
+        ).mappings().all()
+
+    result = []
+    for row in rows:
+        rec = _row_to_qarecord(row)
+        result.append((rec, int(row["dim"]) if row.get("dim") is not None else None, row.get("vec")))
+    return result

@@ -3,7 +3,7 @@ from typing import Optional
 import numpy as np
 from services.embeddings import embed_query
 from services.models import QARecord, QueryRequest
-from repo import repo_qa_find_by_hash
+from repo import repo_qa_find_by_hash, repo_qa_semantic_candidates
 
 INTENT_PROTOTYPES = {
     "analysis": [
@@ -82,8 +82,28 @@ class SearchService:
         raise NotImplementedError("Fuzzy search not yet implemented")
 
     def search_semantic(self, request: QueryRequest):
-        """Placeholder for semantic search using embeddings."""
-        raise NotImplementedError("Semantic search not yet implemented")
+        """Perform semantic search using embeddings and cosine similarity."""
+        if not request.file_hash:
+            raise ValueError("QueryRequest.file_hash is required for semantic search")
+        query_vec = np.asarray(embed_query(request.question_norm), dtype=np.float32)
+        candidates = repo_qa_semantic_candidates(file_hash=request.file_hash, model="intfloat/multilingual-e5-base")
+        best_score = -1.0
+        best_rec = None
+        for rec, _dim, vec_bytes in candidates:
+            candidate_vec = np.frombuffer(vec_bytes, dtype=np.float32)
+            if candidate_vec.size == 0:
+                continue
+            sim = np.dot(query_vec, candidate_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(candidate_vec))
+            if sim > best_score:
+                best_score = sim
+                best_rec = rec
+        threshold = 0.75
+        if best_score >= threshold and best_rec is not None:
+            request.decision = "semantic"
+            if hasattr(request, "badges") and isinstance(request.badges, list):
+                request.badges.append("🔍 semantisch")
+            return best_rec
+        return None
 
     def detect_intent(self, request: QueryRequest) -> str:
         """Detect intent (qa vs analysis) using embedding similarity to prototypes."""
@@ -137,8 +157,13 @@ class SearchService:
             # For now, we return None and let the caller handle analysis rendering.
             return None
 
-        # 3) Otherwise, proceed to semantic search (placeholder) and LLM fallback (outside this service)
-        request.decision = "semantic_or_llm"
+        # 3) Otherwise, try semantic search; if none, mark for LLM
+        rec = self.search_semantic(request)
+        if rec is not None:
+            # search_semantic already set decision and badge
+            return rec
+        # No semantic hit → next stage would be LLM
+        request.decision = "llm"
         if hasattr(request, "badges") and isinstance(request.badges, list):
             request.badges.append("✨ neu generiert")
         return None
