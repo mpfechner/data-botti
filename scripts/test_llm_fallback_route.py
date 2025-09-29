@@ -143,6 +143,50 @@ class TestLLMFallbackRoute(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertIn("MOCK LLM ANSWER", row["answer"])  # stored answer contains our mock
 
+    def test_llm_fallback_reuses_existing_qa(self):
+        """Ensure repeated identical prompts do not create duplicate QA entries."""
+        prompt = "Please summarize the dataset columns in one paragraph."
+
+        # Accept AI consent first (same as the create test)
+        self.client.post(f"/ai/{self.dataset_id}", data={"consent": "1"}, follow_redirects=True)
+
+        # Compute question_hash using the actual file used by the route (latest file for this dataset)
+        with self.engine.begin() as conn:
+            used_fh = conn.execute(
+                text("SELECT file_hash FROM dataset_files WHERE dataset_id = :dsid ORDER BY stored_at DESC LIMIT 1"),
+                {"dsid": self.dataset_id},
+            ).scalar()
+        qh = make_query_request(prompt, used_fh).question_hash
+
+        # 1st call – should create a QA entry
+        resp1 = self.client.post(
+            f"/ai/{self.dataset_id}", data={"prompt": prompt}, follow_redirects=True
+        )
+        self.assertEqual(resp1.status_code, 200)
+
+        # Count QA rows for this question_hash after first call
+        with self.engine.begin() as conn:
+            cnt1 = conn.execute(
+                text("SELECT COUNT(*) AS c FROM qa_pairs WHERE question_hash = :qh AND file_hash = :fh"),
+                {"qh": qh, "fh": used_fh},
+            ).scalar()
+        self.assertEqual(cnt1, 1, "Expected exactly one QA row after first LLM fallback call")
+
+        # 2nd call – should reuse the same QA (no new row)
+        resp2 = self.client.post(
+            f"/ai/{self.dataset_id}", data={"prompt": prompt}, follow_redirects=True
+        )
+        self.assertEqual(resp2.status_code, 200)
+
+        with self.engine.begin() as conn:
+            cnt2 = conn.execute(
+                text("SELECT COUNT(*) AS c FROM qa_pairs WHERE question_hash = :qh AND file_hash = :fh"),
+                {"qh": qh, "fh": used_fh},
+            ).scalar()
+        self.assertEqual(
+            cnt2, 1, "Expected reuse of existing QA entry; duplicate was created"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

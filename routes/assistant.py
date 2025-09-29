@@ -293,14 +293,46 @@ def ai_prompt(dataset_id):
         current_app.logger.info("Token budget: model=%s eo=%s max_tokens=%s", model, _eo, max_tokens)
 
         # Try to reuse an exact answer first (by normalized question hash per dataset/file)
-        file_hash = None
+        # Resolve the REAL file_hash of the latest dataset file; only fall back to legacy "dataset-<id>" if not present.
+        real_file_hash = None
         try:
-            # Prefer meta-provided hash if available; else fall back to dataset id namespace
-            file_hash = (meta.get("file_hash") if isinstance(meta, dict) else None) or f"dataset-{dataset_id}"
+            # meta may be a RowMapping or dict; access safely
+            if isinstance(meta, dict):
+                real_file_hash = meta.get("file_hash")
+            else:
+                # RowMapping supports key lookup
+                real_file_hash = meta["file_hash"] if "file_hash" in meta.keys() else None
         except Exception:
-            file_hash = f"dataset-{dataset_id}"
+            real_file_hash = None
 
-        req = make_query_request(prompt, file_hash)
+        if not real_file_hash:
+            # DB fallback: fetch latest file_hash for this dataset
+            try:
+                with engine.begin() as _conn_fh:
+                    _row_fh = _conn_fh.execute(
+                        text(
+                            """
+                            SELECT file_hash
+                            FROM dataset_files
+                            WHERE dataset_id = :dsid
+                            ORDER BY id DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"dsid": int(dataset_id)},
+                    ).mappings().first()
+                    if _row_fh:
+                        real_file_hash = _row_fh.get("file_hash")
+            except Exception:
+                current_app.logger.exception("Failed to resolve real file_hash for dataset_id=%s", dataset_id)
+                real_file_hash = None
+
+        if not real_file_hash:
+            # Last-resort legacy namespace to avoid breaking flow
+            real_file_hash = f"dataset-{dataset_id}"
+
+        # Build request with the resolved real hash
+        req = make_query_request(prompt, real_file_hash)
         # Orchestrated search/decision: exact → analysis → semantic/LLM
         svc = SearchService()
         rec = svc.search_orchestrated(req)
@@ -321,7 +353,7 @@ def ai_prompt(dataset_id):
             decision_badge = "llm"
             try:
                 qa_id = save_qa(
-                    file_hash=file_hash,
+                    file_hash=real_file_hash,
                     question_original=req.question_raw,
                     question_norm=req.question_norm,
                     question_hash=req.question_hash,
