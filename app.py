@@ -11,6 +11,7 @@ from routes.datasets import datasets_bp
 from routes.assistant import assistant_bp
 from routes.auth import auth_bp
 from routes.admin import bp as admin_bp
+from api import api_v1
 from infra.auth_helpers import login_required, consent_required
 from infra.config import get_config
 from infra.logging import setup_app_logging
@@ -29,6 +30,8 @@ app.register_blueprint(datasets_bp)
 app.register_blueprint(assistant_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(api_v1)
+csrf.exempt(api_v1)
 
 # Apply config
 app.config.update(get_config())

@@ -10,6 +10,13 @@
   .primary { background: #3a6df0; color: #fff; }
   .hint { color: #555; font-size: 0.9rem; }
   .chip.active { background:#e8f4ff; }
+
+  /* Typeahead suggestions */
+  .suggest { margin-top: 6px; }
+  .suggest-list { list-style: none; margin: 6px 0 0 0; padding: 0; border: 1px solid #cfe7ff; border-radius: 6px; background: #fff; max-height: 220px; overflow-y: auto; }
+  .suggest-item { padding: 8px 10px; cursor: pointer; }
+  .suggest-item:hover { background: #f5faff; }
+  .suggest-empty { color:#777; font-size:0.9rem; margin-top:4px; }
 </style>
 
 <h2>Frage stellen</h2>
@@ -31,6 +38,11 @@
     <div class="row">
       <label for="prompt">Frage</label>
       <textarea id="prompt" name="prompt" rows="4" placeholder="Frag mich was zu deinem Datensatz…" required></textarea>
+    </div>
+
+    <!-- Typeahead suggestions (will be populated via JS) -->
+    <div class="suggest" id="suggest" aria-live="polite" aria-label="Vorschläge" style="display:none;">
+      <ul class="suggest-list" id="suggest-list"></ul>
     </div>
 
     <div class="row">
@@ -93,6 +105,11 @@
   const form = document.getElementById('ask-form');
   const sel = document.getElementById('dataset_select');
   const fileHashInput = document.getElementById('file_hash');
+  const promptBox = document.getElementById('prompt');
+  const sugWrap = document.getElementById('suggest');
+  const sugList = document.getElementById('suggest-list');
+  let sugAbort = null;
+  let sugTimer = null;
 
   // Wenn kein eigener Scope-Hash eingegeben wird, kann (optional) der Standard-Hash des Datasets verwendet werden
   sel.addEventListener('change', () => {
@@ -121,5 +138,75 @@
     // Zielroute dynamisch auf /ai/<dataset_id>
     form.action = `/ai/${encodeURIComponent(ds)}`;
   });
+
+  // --- Typeahead suggestions for previous questions (this dataset only) ---
+  function clearSuggestions() {
+    if (sugAbort) { try { sugAbort.abort(); } catch(e){}; sugAbort = null; }
+    if (sugList) sugList.innerHTML = "";
+    if (sugWrap) sugWrap.style.display = "none";
+  }
+
+  function renderSuggestions(items) {
+    if (!sugList || !sugWrap) return;
+    sugList.innerHTML = "";
+    if (!items || items.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'suggest-item';
+      li.innerHTML = '<span class="suggest-empty">Keine Vorschläge</span>';
+      sugList.appendChild(li);
+      sugWrap.style.display = "block";
+      return;
+    }
+    items.forEach(txt => {
+      const li = document.createElement('li');
+      li.className = 'suggest-item';
+      li.textContent = txt;
+      li.addEventListener('click', () => {
+        promptBox.value = txt;
+        clearSuggestions();
+        promptBox.focus();
+      });
+      sugList.appendChild(li);
+    });
+    sugWrap.style.display = "block";
+  }
+
+  async function fetchSuggestions(q, datasetId) {
+    if (!q || q.length < 2 || !datasetId) { clearSuggestions(); return; }
+    try {
+      if (sugAbort) { sugAbort.abort(); }
+      sugAbort = new AbortController();
+      const url = new URL('/search/suggest', window.location.origin);
+      url.searchParams.set('dataset_id', datasetId);
+      url.searchParams.set('q', q);
+      const resp = await fetch(url.toString(), { method: 'GET', signal: sugAbort.signal, headers: { 'Accept': 'application/json' } });
+      if (!resp.ok) { clearSuggestions(); return; }
+      const data = await resp.json().catch(() => []);
+      // Expecting data like: { suggestions: ["...", "..."] } or ["...", "..."]
+      const items = Array.isArray(data) ? data : (Array.isArray(data.suggestions) ? data.suggestions : []);
+      renderSuggestions(items.slice(0, 8));
+    } catch (e) {
+      // Ignore errors (network/abort), just hide list
+      clearSuggestions();
+    }
+  }
+
+  function debounceSuggest() {
+    if (sugTimer) clearTimeout(sugTimer);
+    sugTimer = setTimeout(() => {
+      const ds = sel.value;
+      const q = promptBox.value.trim();
+      fetchSuggestions(q, ds);
+    }, 180);
+  }
+
+  if (promptBox) {
+    promptBox.addEventListener('input', debounceSuggest);
+    promptBox.addEventListener('blur', () => setTimeout(clearSuggestions, 200)); // allow click
+    promptBox.addEventListener('focus', debounceSuggest);
+  }
+
+  // When dataset changes, clear suggestions
+  sel.addEventListener('change', clearSuggestions);
 </script>
 {% endblock %}

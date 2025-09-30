@@ -3,6 +3,9 @@ from functools import wraps
 from typing import Callable, Optional
 
 from flask import session, redirect, url_for, request, flash, current_app
+from werkzeug.security import check_password_hash  # type: ignore
+# Token utilities for API auth
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired  # type: ignore
 
 # Optional SQL support if available in the project
 try:
@@ -179,3 +182,128 @@ def set_session_consent(consented: bool = True):
     else:
         session.pop("user_consent", None)
         session.pop("consent_given_at", None)
+
+# -----------------------------
+# API Token helpers (optional)
+# -----------------------------
+def _get_token_serializer() -> URLSafeTimedSerializer:
+    """
+    Create a serializer bound to the Flask SECRET_KEY for signing API tokens.
+    Uses a stable salt to namespace tokens for this project.
+    """
+    # Prefer explicit SECRET_KEY from config; fall back to Flask's app.secret_key
+    secret = None
+    try:
+        secret = current_app.config.get("SECRET_KEY") or current_app.secret_key
+    except Exception:
+        secret = None
+    if not secret:
+        # Fallback to an empty string to keep type, but tokens won't validate across processes
+        secret = "dev-secret"
+    return URLSafeTimedSerializer(secret_key=secret, salt="databotti.api.v1")
+
+def _issue_token_for_user(user_id: int) -> str:
+    """
+    Internal helper: issue a signed API token for the given user_id.
+    The token is time-stamped; expiry is enforced during verification.
+    """
+    s = _get_token_serializer()
+    return s.dumps({"uid": int(user_id)})
+
+def issue_api_token(email: str, password: str) -> Optional[str]:
+    """
+    Issue a signed API token by validating user credentials (email + password).
+    Returns the token string on success, or None on failure.
+    """
+    # Resolve engine
+    engine = _get_engine_from_app() or _get_engine_optional()
+    if engine is None:
+        return None
+    # Look up user by email
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT id, password_hash FROM users WHERE email = :email"),
+                {"email": email},
+            ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    try:
+        user_id = int(row[0])
+        pwd_hash = row[1]
+    except Exception:
+        return None
+    # Verify password
+    try:
+        if not pwd_hash or not check_password_hash(pwd_hash, password):
+            return None
+    except Exception:
+        return None
+    # Issue token for this user
+    try:
+        return _issue_token_for_user(user_id)
+    except Exception:
+        return None
+
+def verify_api_token(token: str, max_age_hours: int = 24) -> Optional[int]:
+    """
+    Verify a signed API token and return the embedded user_id if valid.
+    Returns None if the token is missing/invalid/expired.
+    """
+    if not token:
+        return None
+    s = _get_token_serializer()
+    try:
+        data = s.loads(token, max_age=max_age_hours * 3600)
+        uid = int(data.get("uid"))
+        return uid
+    except (SignatureExpired, BadSignature, ValueError, TypeError):
+        return None
+
+def get_bearer_token_from_request() -> Optional[str]:
+    """
+    Extract a Bearer token from the Authorization header.
+    Example: Authorization: Bearer &lt;token&gt;
+    """
+    auth = request.headers.get("Authorization", "")
+    if not auth:
+        return None
+    parts = auth.strip().split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return None
+
+def current_api_user_id(max_age_hours: int = 24) -> Optional[int]:
+    """
+    Resolve the current user id for API endpoints:
+    - Prefer a valid Bearer token in the Authorization header
+    - Fall back to the logged-in session (web)
+    """
+    token = get_bearer_token_from_request()
+    if token:
+        uid = verify_api_token(token, max_age_hours=max_age_hours)
+        if uid:
+            return uid
+    # Fallback to session user (if API is used from the web app)
+    return get_current_user_id()
+
+def api_auth_required(view: Callable):
+    """
+    Decorator for API endpoints:
+    - Accepts either a valid Bearer token (Authorization: Bearer &lt;token&gt;)
+      or a logged-in session (when called from the web UI).
+    - On failure, returns a 401 JSON response.
+    """
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        uid = current_api_user_id()
+        if uid is None:
+            # Defer import of jsonify to avoid heavy imports at module load
+            from flask import jsonify
+            return jsonify({"error": "Unauthorized"}), 401
+        # Optionally stash the uid in request context for downstream use
+        request.api_user_id = uid  # type: ignore[attr-defined]
+        return view(*args, **kwargs)
+    return wrapped
