@@ -519,6 +519,26 @@ def repo_qa_find_by_hash(*, file_hash: str, question_hash: str) -> QARecord | No
         ).mappings().first()
     return _row_to_qarecord(row)
 
+# New: Find a qa_pairs row by id
+def repo_qa_find_by_id(*, qa_id: int) -> QARecord | None:
+    """Find a qa_pairs row by id. Returns QARecord or None."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, file_hash, question_original, question_norm, question_hash, answer, meta, created_at
+                FROM qa_pairs
+                WHERE id = :id
+                LIMIT 1
+                """
+            ),
+            {"id": int(qa_id)},
+        ).mappings().first()
+    return _row_to_qarecord(row)
+
 
 # --- qa_embeddings repository helpers ----------------------------------------------------------
 
@@ -560,6 +580,82 @@ def repo_embeddings_by_file(*, file_hash: str, model: str):
             ),
             {"file_hash": file_hash, "model": model},
         ).fetchall()
+    return rows
+
+
+# --- test/maintenance cleanup helpers ---------------------------------------------------------
+
+
+
+# QA-scoped embedding cleanup helper
+def repo_embeddings_delete_by_qa(*, qa_id: int, model: str) -> int:
+    """Delete embeddings for a specific QA and model. Returns affected row count."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        res = conn.execute(
+            text("DELETE FROM qa_embeddings WHERE qa_id = :qa_id AND model = :model"),
+            {"qa_id": int(qa_id), "model": model},
+        )
+        try:
+            return int(getattr(res, "rowcount", 0) or 0)
+        except Exception:
+            return 0
+
+
+def repo_qa_delete_by_id(*, qa_id: int) -> None:
+    """Delete a qa_pairs row by id. Call after removing dependent embeddings."""
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM qa_pairs WHERE id = :id"), {"id": int(qa_id)})
+
+
+# --- helper: list qa_pairs without embedding for a model --------------------------------------
+
+MODEL_NAME = "intfloat/multilingual-e5-base"  # fallback default if not present elsewhere
+
+def repo_qa_without_embedding(*, file_hash: str | None = None, model: str = MODEL_NAME):
+    """Return list of qa_pairs (id, file_hash, question_norm) that have no embedding stored for the given model.
+    If file_hash is provided, filter by that file; else return across all files.
+    """
+    engine = _get_engine_from_app()
+    if engine is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with engine.connect() as conn:
+        if file_hash:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT qp.id, qp.file_hash, qp.question_norm
+                    FROM qa_pairs qp
+                    WHERE qp.file_hash = :file_hash
+                      AND NOT EXISTS (
+                          SELECT 1 FROM qa_embeddings qe
+                          WHERE qe.qa_id = qp.id AND qe.model = :model
+                      )
+                    ORDER BY qp.id
+                    """
+                ),
+                {"file_hash": file_hash, "model": model},
+            ).mappings().all()
+        else:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT qp.id, qp.file_hash, qp.question_norm
+                    FROM qa_pairs qp
+                    WHERE NOT EXISTS (
+                          SELECT 1 FROM qa_embeddings qe
+                          WHERE qe.qa_id = qp.id AND qe.model = :model
+                      )
+                    ORDER BY qp.id
+                    """
+                ),
+                {"model": model},
+            ).mappings().all()
     return rows
 
 

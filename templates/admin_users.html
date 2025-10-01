@@ -80,6 +80,19 @@
         </tbody>
       </table>
     </div>
+</section>
+  <section class="card">
+    <h2 class="card-title">Embeddings Backfill</h2>
+    <form method="post" action="{{ url_for('admin.backfill_embeddings') }}" class="form">
+      {{ csrf_field() }}
+      <div class="form-row">
+        <label for="file_hash">File Hash (optional)</label>
+        <input id="file_hash" name="file_hash" type="text" placeholder="leave empty for all files">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-warning" type="submit">Start Backfill</button>
+      </div>
+    </form>
   </section>
 </div>
 {% endblock %}

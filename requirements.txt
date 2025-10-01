@@ -27,3 +27,4 @@ pymysql
 openai>=1.40,<2
 Flask-WTF==1.2.2
 sentence-transformers==5.1.0
+pytest
