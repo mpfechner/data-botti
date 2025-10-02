@@ -5,6 +5,8 @@ from services.embeddings import embed_query
 from services.models import QARecord, QueryRequest
 from repo import repo_qa_find_by_hash, repo_qa_semantic_candidates
 
+SEMANTIC_THRESHOLD = 0.90
+
 INTENT_PROTOTYPES = {
     "analysis": [
         "Zeige mir die 7 schwächsten Monate",
@@ -69,7 +71,7 @@ INTENT_PROTOTYPES = {
 
 
 class SearchService:
-    """Search service with exact, fuzzy, and semantic modes (fuzzy/semantic are placeholders)."""
+    """Main search orchestrator handling exact, intent-based analysis, semantic search, and fallback."""
 
     def search_exact(self, request: QueryRequest) -> Optional[QARecord]:
         """Perform exact search using file_hash + question_hash."""
@@ -97,8 +99,7 @@ class SearchService:
             if sim > best_score:
                 best_score = sim
                 best_rec = rec
-        threshold = 0.75
-        if best_score >= threshold and best_rec is not None:
+        if best_score >= SEMANTIC_THRESHOLD and best_rec is not None:
             request.decision = "semantic"
             if hasattr(request, "badges") and isinstance(request.badges, list):
                 request.badges.append("🔍 semantisch")
@@ -134,8 +135,8 @@ class SearchService:
         return request.intent
 
     def search_orchestrated(self, request: QueryRequest) -> Optional[QARecord]:
-        """End-to-end routing: exact → (if analysis) analysis → else semantic → LLM (placeholders).
-        Returns a QARecord if an exact match was found; otherwise returns None for now.
+        """Single entrypoint for search: exact → analysis intent → semantic → none (LLM fallback outside).
+        Returns a QARecord if an exact or semantic match was found; otherwise returns None.
         Side effects: sets request.decision and may append badges.
         """
         # 1) Exact match first
@@ -157,13 +158,11 @@ class SearchService:
             # For now, we return None and let the caller handle analysis rendering.
             return None
 
-        # 3) Otherwise, try semantic search; if none, mark for LLM
+        # 3) Otherwise, try semantic search; if none, mark for none decision
         rec = self.search_semantic(request)
         if rec is not None:
             # search_semantic already set decision and badge
             return rec
-        # No semantic hit → next stage would be LLM
-        request.decision = "llm"
-        if hasattr(request, "badges") and isinstance(request.badges, list):
-            request.badges.append("✨ neu generiert")
+        # No semantic hit → next stage would be LLM (outside this method)
+        request.decision = "none"
         return None

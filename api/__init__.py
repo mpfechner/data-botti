@@ -8,6 +8,11 @@ from flask import Blueprint, jsonify, request, current_app, g
 from sqlalchemy import text
 from infra.auth_helpers import api_auth_required, current_api_user_id, issue_api_token
 
+from time import perf_counter
+from sqlalchemy import text as _text
+from repo import repo_qa_find_by_hash, repo_qa_find_by_id
+from services.qa_service import make_query_request, embed_query, find_semantic_candidates
+
 # -----------------------------------------------------------------------------
 # Blueprint
 # -----------------------------------------------------------------------------
@@ -191,3 +196,135 @@ def list_datasets():
     return json_error("Failed to load datasets.", 500)
 
   return json_ok({"items": items}, 200)
+
+# -----------------------------------------------------------------------------
+# Search-only endpoint over existing QA pairs (Exact → Semantic; no LLM)
+# -----------------------------------------------------------------------------
+@api_v1.post("/search")
+@api_auth_required
+def api_search_only():
+  user_id = current_api_user_id()
+  if user_id is None:
+    return json_error("Unauthorized", 401)
+
+  # Accept JSON or form data
+  data_json = request.get_json(silent=True) or {}
+  data_form = request.form or {}
+  prompt = (data_json.get("prompt") or data_form.get("prompt") or "").strip()
+  dataset_id = data_json.get("dataset_id") or data_form.get("dataset_id")
+  try:
+    dataset_id = int(dataset_id)
+  except Exception:
+    dataset_id = None
+  top_k = data_json.get("top_k") or data_form.get("top_k") or 3
+  try:
+    top_k = max(1, min(10, int(top_k)))
+  except Exception:
+    top_k = 3
+
+  if not prompt or not dataset_id:
+    return json_error("Missing 'prompt' or 'dataset_id'.", 400)
+
+  engine = current_app.config.get("DB_ENGINE")
+  if engine is None:
+    return json_error("Database engine not configured.", 500)
+
+  # Resolve file_hash for this dataset with access control (owner or group member)
+  sql = _text(
+    """
+    SELECT df.file_hash
+    FROM datasets d
+    JOIN dataset_files df ON df.dataset_id = d.id
+    LEFT JOIN datasets_groups dg ON dg.dataset_id = d.id
+    LEFT JOIN user_groups ug ON ug.group_id = dg.group_id
+    WHERE d.id = :did AND (d.user_id = :uid OR ug.user_id = :uid)
+    LIMIT 1
+    """
+  )
+  file_hash = None
+  try:
+    with engine.begin() as conn:
+      row = conn.execute(sql, {"did": dataset_id, "uid": user_id}).first()
+      if row:
+        file_hash = row[0]
+  except Exception:
+    current_app.logger.exception("Failed to resolve file_hash for dataset_id=%s", dataset_id)
+    return json_error("Failed to resolve dataset file.", 500)
+
+  if not file_hash:
+    return json_error("Dataset not found or access denied.", 404)
+
+  t0 = perf_counter()
+  # Build normalized request (yields question_norm + question_hash)
+  req = make_query_request(prompt, file_hash)
+
+  # 1) Exact
+  try:
+    rec = repo_qa_find_by_hash(file_hash=file_hash, question_hash=req.question_hash)
+  except Exception:
+    current_app.logger.exception("Exact lookup failed for dataset_id=%s", dataset_id)
+    return json_error("Exact search failed.", 500)
+
+  if rec is not None:
+    took_ms = (perf_counter() - t0) * 1000.0
+    return json_ok({
+      "found": True,
+      "decision": "exact",
+      "dataset_id": dataset_id,
+      "file_hash": file_hash,
+      "took_ms": round(took_ms, 2),
+      "records": [{
+        "qa_id": rec.id,
+        "question": rec.question_original or rec.question_norm,
+        "answer": rec.answer,
+        "score": 1.0,
+        "badge": "exact",
+        "file_hash": rec.file_hash,
+      }],
+    })
+
+  # 2) Semantic
+  try:
+    q_vec = embed_query(req.question_norm)
+    candidates = find_semantic_candidates(file_hash, q_vec)
+  except Exception:
+    current_app.logger.exception("Semantic search failed for dataset_id=%s", dataset_id)
+    return json_error("Semantic search failed.", 500)
+
+  records = []
+  THRESHOLD = 0.75
+  for qa_id, score in (candidates or [])[:top_k]:
+    if score < THRESHOLD:
+      break
+    rec2 = repo_qa_find_by_id(qa_id=qa_id)
+    if not rec2:
+      continue
+    records.append({
+      "qa_id": rec2.id,
+      "question": rec2.question_original or rec2.question_norm,
+      "answer": rec2.answer,
+      "score": float(score),
+      "badge": "semantic",
+      "file_hash": rec2.file_hash,
+    })
+
+  took_ms = (perf_counter() - t0) * 1000.0
+  if records:
+    return json_ok({
+      "found": True,
+      "decision": "semantic",
+      "dataset_id": dataset_id,
+      "file_hash": file_hash,
+      "took_ms": round(took_ms, 2),
+      "records": records,
+    })
+
+  # 3) None – client may offer to escalate to LLM via a separate endpoint
+  return json_ok({
+    "found": False,
+    "decision": "none",
+    "dataset_id": dataset_id,
+    "file_hash": file_hash,
+    "took_ms": round(took_ms, 2),
+    "records": [],
+  })

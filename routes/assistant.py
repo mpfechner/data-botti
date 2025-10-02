@@ -333,14 +333,15 @@ def ai_prompt(dataset_id):
 
         # Build request with the resolved real hash
         req = make_query_request(prompt, real_file_hash)
-        # Orchestrated search/decision: exact → analysis → semantic/LLM
+        # Orchestrated search-only via SearchService (exact → analysis → semantic → none)
         svc = SearchService()
         rec = svc.search_orchestrated(req)
-        if rec is not None and getattr(rec, "answer", None):
-            current_app.logger.info("Reusing exact QA id=%s for dataset_id=%s", rec.id, dataset_id)
+        decision = getattr(req, "decision", None)
+        if decision in ("exact", "semantic") and rec is not None and getattr(rec, "answer", None):
+            current_app.logger.info("Reusing stored QA (decision=%s) id=%s for dataset_id=%s", decision, getattr(rec, 'id', None), dataset_id)
             result_text = rec.answer
-            decision_badge = "exact"
-        elif getattr(req, "decision", None) == "analysis":
+            decision_badge = "exact"  # treat high-confidence semantic like exact for UX
+        elif decision == "analysis":
             # Placeholder analysis rendering; later replaced by real analytics pipeline
             result_text = (
                 "📊 Analyse-Modus (Platzhalter) – Deine Anfrage wurde als Analyse erkannt. "
@@ -349,6 +350,15 @@ def ai_prompt(dataset_id):
             decision_badge = "analysis"
         else:
             # Fallback: LLM generation with the prepared two-stage prompt
+            current_app.logger.info(
+                "assistant.ai_prompt: saving new QA",
+                extra={
+                    "file_hash": real_file_hash,
+                    "q_hash": req.question_hash,
+                    "q_norm_head": (req.question_norm or "")[:80],
+                    "answer_head": (messages[-1]["content"][:80] if isinstance(messages, list) and messages and isinstance(messages[-1], dict) else ""),
+                },
+            )
             result_text, usage = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=0.2)
             decision_badge = "llm"
             try:
@@ -360,7 +370,15 @@ def ai_prompt(dataset_id):
                     answer=result_text,
                     meta={"source": "assistant.ai_prompt", "model": str(model)},
                 )
-                current_app.logger.info("Saved new QA id=%s for dataset_id=%s", qa_id, dataset_id)
+                current_app.logger.info(
+                    "assistant.ai_prompt: saved QA",
+                    extra={
+                        "qa_id": qa_id,
+                        "dataset_id": dataset_id,
+                        "file_hash": real_file_hash,
+                        "q_hash": req.question_hash,
+                    },
+                )
             except Exception:
                 current_app.logger.exception("Failed to save QA after LLM call")
 

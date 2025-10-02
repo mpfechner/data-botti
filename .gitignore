@@ -3,4 +3,7 @@
 instance/
 .idea/
 .venv/
-.idea/
+__pycache__/
+.DS_Store
+logs/
+*.sqlite*

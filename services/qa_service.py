@@ -1,4 +1,4 @@
-import re
+import regex as re
 import unicodedata
 import hashlib
 import logging
@@ -15,12 +15,14 @@ from repo import (
 import numpy as np
 
 from services.embeddings import embed_query, embed_passage
-
 from services.ai_client import ask_model
 from services.models import QueryRequest, QARecord, TokenUsage, MatchResults
+from services.search_service import SearchService
 
 MODEL_NAME = "intfloat/multilingual-e5-base"
 logger = logging.getLogger(__name__)
+
+SEMANTIC_THRESHOLD = 0.90  # unified high-precision threshold (kept here for compatibility)
 
 def embedding_exists_for_qa(file_hash: str, qa_id: int, *, model: str = MODEL_NAME) -> bool:
     rows = repo_embeddings_by_file(file_hash=file_hash, model=model)
@@ -105,6 +107,32 @@ def normalize_question(text: str) -> str:
     norm = re.sub(r"\s+", " ", norm)
     norm = re.sub(r"\s*([?.!,;:])\s*", r"\1 ", norm)
     return norm.strip()
+
+
+def _tokenize_content(text: str) -> list[str]:
+    if not text:
+        return []
+    # keep letters/digits, split on non-word, normalize
+    txt = re.sub(r"[^\p{L}\p{N}]+", " ", unicodedata.normalize("NFKC", text), flags=re.UNICODE)
+    # Python's re doesn't support \p{L} by default; fallback simple split
+    tokens = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿÄÖÜäöüß0-9]+", txt.lower())
+    # minimal multilingual stoplist (de/en) + short tokens
+    stop = {
+        "der","die","das","und","oder","ein","eine","einen","im","in","am","an","auf","mit","ohne","für","von","zu","zum","zur","den","dem","des","ist","sind","war","waren","wird","werden","bitte","zeige","zeig","erstelle","pruefe","prüfe","liefere","nenne","gib","geben","wo","wie","was","ist","soll","sollen","machen","mach","erstelle","erzeuge","create","make","show","give","please","the","a","an","and","or","of","to","in","on","at","by","for","from","is","are","be","was","were","will"
+    }
+    return [t for t in tokens if len(t) > 2 and t not in stop]
+
+
+def token_overlap(a: str, b: str) -> tuple[int, float]:
+    """Return (overlap_count, jaccard) over content tokens of a and b."""
+    ta = set(_tokenize_content(a))
+    tb = set(_tokenize_content(b))
+    if not ta or not tb:
+        return (0, 0.0)
+    inter = ta & tb
+    union = ta | tb
+    j = 0.0 if not union else len(inter) / len(union)
+    return (len(inter), float(j))
 
 
 def hash_question(text_norm: str) -> str:
@@ -199,46 +227,19 @@ def call_llm_and_record(request: QueryRequest, *, model: str = "gpt-4o-mini", ma
 
 # New orchestrate function
 def orchestrate(request: QueryRequest) -> MatchResults:
-    """Orchestrate QA flow: try exact, else call LLM and save new QA."""
-    # Try exact match first
-    if request.file_hash:
-        rec = find_exact_qa(file_hash=request.file_hash, question_hash=request.question_hash)
-        if rec:
-            request.decision = "exact"
-            request.badges.append("exact")
-            return MatchResults(mode="exact", records=[rec], top_k=1, took_ms=0.0)
+    """
+    Search-only wrapper for backward compatibility.
+    Delegates to SearchService (exact → analysis → semantic → none).
+    Never calls the LLM and never saves QAs.
+    """
+    svc = SearchService()
+    rec = svc.search_orchestrated(request)
+    decision = getattr(request, "decision", None)
 
-    # Try semantic search
-    if request.file_hash:
-        q_vec = embed_query(request.question_norm)
-        candidates = find_semantic_candidates(request.file_hash, q_vec)
-        if candidates:
-            best_id, best_score = candidates[0]
-            if best_score > 0.75:  # simple threshold
-                rec = repo_qa_find_by_id(qa_id=best_id)
-                if rec:
-                    request.decision = "semantic"
-                    request.badges.append("semantic")
-                    return MatchResults(mode="semantic", records=[rec], top_k=1, took_ms=0.0)
-
-    # Fallback: call LLM and save new QA
-    answer = call_llm_and_record(request)
-    qa_id = save_qa(
-        file_hash=request.file_hash or "unknown",
-        question_original=request.question_raw,
-        question_norm=request.question_norm,
-        question_hash=request.question_hash,
-        answer=answer,
-        meta={"source": "orchestrate"},
-    )
-    rec_new = QARecord(
-        id=qa_id,
-        question=request.question_raw,
-        question_norm=request.question_norm,
-        question_hash=request.question_hash,
-        answer=answer,
-        file_hash=request.file_hash,
-    )
-    request.decision = "llm"
-    request.badges.append("llm")
-    return MatchResults(mode="llm", records=[rec_new], top_k=1, took_ms=0.0)
+    if decision in ("exact", "semantic") and rec is not None:
+        return MatchResults(mode=decision, records=[rec], top_k=1, took_ms=0.0)
+    elif decision == "analysis":
+        return MatchResults(mode="analysis", records=[], top_k=0, took_ms=0.0)
+    else:
+        request.decision = "none"
+        return MatchResults(mode="none", records=[], top_k=0, took_ms=0.0)
