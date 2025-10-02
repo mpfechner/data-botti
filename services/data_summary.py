@@ -29,3 +29,21 @@ def _parse_datetime_series(series):
             f"Could not import legacy _parse_datetime_series from helpers.py: {_import_error}"
         )
     return _legacy_parse_datetime_series(series)
+
+
+# Shim for summarize_columns_for_selection, delegating to helpers.py
+try:
+    from helpers import (
+        summarize_columns_for_selection as _legacy_summarize_columns_for_selection,  # type: ignore[attr-defined]
+    )
+except Exception:
+    _legacy_summarize_columns_for_selection = None  # type: ignore[assignment]
+
+
+def summarize_columns_for_selection(df):
+    """Shim that calls the legacy helpers.summarize_columns_for_selection.
+    Returns exactly what the old implementation returned.
+    """
+    if _legacy_summarize_columns_for_selection is None:  # pragma: no cover
+        raise ImportError("Could not import summarize_columns_for_selection from helpers.py")
+    return _legacy_summarize_columns_for_selection(df)
