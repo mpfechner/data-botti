@@ -26,6 +26,39 @@ def get_dataset_original_name(engine, dataset_id: int) -> str:
     return _legacy_get_dataset_original_name(engine, dataset_id)
 
 
+# --- temporary shim for helpers.build_dataset_context ------------------------------------------
+try:
+    from helpers import build_dataset_context as _legacy_build_dataset_context  # type: ignore[attr-defined]
+except Exception as _e2:  # pragma: no cover
+    _legacy_build_dataset_context = None  # type: ignore[assignment]
+    _legacy_import_error_ctx = _e2  # type: ignore[assignment]
+else:
+    _legacy_import_error_ctx = None  # type: ignore[assignment]
+
+
+def build_dataset_context(
+    engine,
+    dataset_id: int,
+    n_rows: int = 5,
+    max_cols: int = 12,
+    include_columns: list[str] | None = None,
+) -> str:
+    """Shim delegating to legacy helpers.build_dataset_context.
+    Keeps behavior identical while we migrate logic into repo.py.
+    """
+    if _legacy_build_dataset_context is None:  # pragma: no cover
+        raise ImportError(
+            f"Could not import legacy build_dataset_context: {_legacy_import_error_ctx}"
+        )
+    return _legacy_build_dataset_context(
+        engine,
+        dataset_id,
+        n_rows=n_rows,
+        max_cols=max_cols,
+        include_columns=include_columns,
+    )
+
+
 class DuplicateEmailError(Exception):
     pass
 
