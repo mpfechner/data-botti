@@ -5,6 +5,7 @@ from flask import current_app
 import json
 
 import pandas as pd
+from services.csv_io import load_csv_resilient
 from sqlalchemy.exc import IntegrityError
 from services.models import QARecord
 
@@ -41,15 +42,8 @@ def get_dataset_original_name(engine, dataset_id: int) -> str:
         return str(name) if name is not None else ""
 
 
-# --- temporary shim for helpers.build_dataset_context ------------------------------------------
-try:
-    from helpers import build_dataset_context as _legacy_build_dataset_context  # type: ignore[attr-defined]
-except Exception as _e2:  # pragma: no cover
-    _legacy_build_dataset_context = None  # type: ignore[assignment]
-    _legacy_import_error_ctx = _e2  # type: ignore[assignment]
-else:
-    _legacy_import_error_ctx = None  # type: ignore[assignment]
 
+# --- build_dataset_context: in-repo implementation (replaces legacy helper) --------------------
 
 def build_dataset_context(
     engine,
@@ -58,20 +52,60 @@ def build_dataset_context(
     max_cols: int = 12,
     include_columns: list[str] | None = None,
 ) -> str:
-    """Shim delegating to legacy helpers.build_dataset_context.
-    Keeps behavior identical while we migrate logic into repo.py.
+    """Build a compact textual context for a dataset.
+
+    - Loads the latest dataset file (encoding/delimiter from dataset_files if available)
+    - Optionally restricts to include_columns
+    - Otherwise limits to the first max_cols columns
+    - Returns a string with filename, column list and a small CSV preview (head n_rows)
     """
-    if _legacy_build_dataset_context is None:  # pragma: no cover
-        raise ImportError(
-            f"Could not import legacy build_dataset_context: {_legacy_import_error_ctx}"
-        )
-    return _legacy_build_dataset_context(
-        engine,
-        dataset_id,
-        n_rows=n_rows,
-        max_cols=max_cols,
-        include_columns=include_columns,
-    )
+    # Fetch meta + load DataFrame
+    with engine.begin() as conn:
+        meta = get_latest_dataset_file(conn, dataset_id)
+    original_name = get_dataset_original_name(engine, dataset_id)
+
+    df = None
+    used_encoding = None
+    used_delimiter = None
+
+    if meta and meta.get("file_path"):
+        enc = meta.get("encoding")
+        delim = meta.get("delimiter")
+        # load_csv_resilient returns (df, used_encoding, used_delimiter)
+        df, used_encoding, used_delimiter = load_csv_resilient(meta["file_path"], enc, delim)
+    else:
+        # Meta missing: try to load anyway (will likely fail but keeps behavior explicit)
+        raise RuntimeError("No dataset_files metadata found for dataset; cannot build context")
+
+    # Column selection logic
+    all_cols = list(df.columns)
+    if include_columns:
+        cols = [c for c in include_columns if c in all_cols]
+        used_selected = True
+    else:
+        used_selected = False
+        cols = all_cols[: max_cols] if len(all_cols) > max_cols else all_cols
+
+    # Compose preview
+    preview_df = df[cols].head(int(n_rows)) if cols else df.head(int(n_rows))
+    csv_preview = preview_df.to_csv(index=False)
+
+    # Build context string
+    header_lines = []
+    if original_name:
+        header_lines.append(f"Dataset: {original_name}")
+    header_lines.append(f"Rows (preview): {int(n_rows)}  |  Columns used: {len(cols)} / {len(all_cols)}")
+    header_lines.append("Columns: " + ", ".join(map(str, cols)))
+    if used_encoding or used_delimiter:
+        parts = []
+        if used_encoding:
+            parts.append(f"encoding={used_encoding}")
+        if used_delimiter:
+            parts.append(f"delimiter={used_delimiter}")
+        header_lines.append("Load params: " + ", ".join(parts))
+
+    context = "\n".join(header_lines) + "\n\n" + csv_preview
+    return context
 
 
 class DuplicateEmailError(Exception):
