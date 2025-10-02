@@ -87,47 +87,6 @@ def _looks_like_datetime(series: pd.Series) -> bool:
     return share >= 0.5
 
 
-def insert_dataset_and_file(engine, user_id: int, filename: str, file_info: dict) -> int:
-    """Legt Dataset + Datei an. Bei bereits vorhandenem file_hash wird der bestehende dataset_id zurückgegeben."""
-    with engine.begin() as conn:
-        # 1) Duplikate vermeiden – existiert der Hash schon?
-        existing = conn.execute(
-            text("SELECT dataset_id FROM dataset_files WHERE file_hash = :h LIMIT 1"),
-            {"h": file_info["file_hash"]}
-        ).scalar()
-        if existing:
-            return int(existing)
-
-        # 2) Neues Dataset anlegen
-        res = conn.execute(
-            text("""
-                INSERT INTO datasets (filename, upload_date, user_id)
-                VALUES (:filename, NOW(), :user_id)
-            """),
-            {"filename": filename, "user_id": user_id}
-        )
-        dataset_id = getattr(res, "lastrowid", None)
-        if not dataset_id:
-            dataset_id = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
-
-        # 3) Datei-Metadaten anlegen
-        conn.execute(
-            text("""
-                INSERT INTO dataset_files (dataset_id, original_name, size_bytes, file_hash, encoding, delimiter, file_path)
-                VALUES (:dataset_id, :original_name, :size_bytes, :file_hash, :encoding, :delimiter, :file_path)
-            """),
-            {
-                "dataset_id": dataset_id,
-                "original_name": file_info["original_name"],
-                "size_bytes": file_info["size_bytes"],
-                "file_hash": file_info["file_hash"],
-                "encoding": file_info["encoding"],
-                "delimiter": file_info["delimiter"],
-                "file_path": file_info["file_path"],
-            }
-        )
-
-    return int(dataset_id)
 
 
 def analyze_and_store_columns(db_engine, dataset_id: int, df):
