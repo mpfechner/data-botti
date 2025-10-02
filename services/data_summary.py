@@ -47,3 +47,21 @@ def summarize_columns_for_selection(df):
     if _legacy_summarize_columns_for_selection is None:  # pragma: no cover
         raise ImportError("Could not import summarize_columns_for_selection from helpers.py")
     return _legacy_summarize_columns_for_selection(df)
+
+
+# Shim for build_cross_column_overview, delegating to helpers.py
+try:
+    from helpers import (
+        build_cross_column_overview as _legacy_build_cross_column_overview,  # type: ignore[attr-defined]
+    )
+except Exception:
+    _legacy_build_cross_column_overview = None  # type: ignore[assignment]
+
+
+def build_cross_column_overview(df):
+    """Shim that calls the legacy helpers.build_cross_column_overview.
+    Returns exactly what the old implementation returned.
+    """
+    if _legacy_build_cross_column_overview is None:  # pragma: no cover
+        raise ImportError("Could not import build_cross_column_overview from helpers.py")
+    return _legacy_build_cross_column_overview(df)
