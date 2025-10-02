@@ -4,6 +4,7 @@ from sqlalchemy import text
 from flask import current_app
 import json
 
+import pandas as pd
 from sqlalchemy.exc import IntegrityError
 from services.models import QARecord
 
@@ -151,25 +152,89 @@ def get_dataset_columns(conn, dataset_id: int):
     ).mappings().all()
 
 
-# --- temporary shim for helpers.analyze_and_store_columns -------------------------------------
-try:
-    from helpers import analyze_and_store_columns as _legacy_analyze_and_store_columns  # type: ignore[attr-defined]
-except Exception as _e_cols:  # pragma: no cover
-    _legacy_analyze_and_store_columns = None  # type: ignore[assignment]
-    _legacy_import_error_cols = _e_cols  # type: ignore[assignment]
-else:
-    _legacy_import_error_cols = None  # type: ignore[assignment]
-
+# --- analyze_and_store_columns: in-repo implementation (replaces legacy helper) -----------------
 
 def analyze_and_store_columns(db_engine, dataset_id: int, df):
-    """Shim delegating to legacy helpers.analyze_and_store_columns.
-    Keeps behavior identical while we migrate logic into repo.py.
+    """Analyze DataFrame columns and persist results to dataset_columns.
+
+    Columns written: dataset_id, ordinal, name, dtype, is_nullable, distinct_count, min_val, max_val
     """
-    if _legacy_analyze_and_store_columns is None:  # pragma: no cover
-        raise ImportError(
-            f"Could not import legacy analyze_and_store_columns: {_legacy_import_error_cols}"
+    # Build per-column metadata
+    rows = []
+    for idx, col in enumerate(df.columns):
+        s = df[col]
+        dtype_str = str(s.dtype)
+        is_nullable = bool(getattr(s, "isna", lambda: pd.Series([False]))().any())
+        # distinct
+        try:
+            distinct_count = int(s.nunique(dropna=True))
+        except Exception:
+            distinct_count = None
+
+        min_val = None
+        max_val = None
+
+        if pd.api.types.is_numeric_dtype(s):
+            try:
+                num = pd.to_numeric(s, errors="coerce")
+                if num.notna().any():
+                    min_val = float(num.min())
+                    max_val = float(num.max())
+            except Exception:
+                min_val = None
+                max_val = None
+        elif pd.api.types.is_datetime64_any_dtype(s) or pd.api.types.is_datetime64_dtype(s):
+            try:
+                dt = pd.to_datetime(s, errors="coerce")
+                if dt.notna().any():
+                    min_val = dt.min().isoformat()
+                    max_val = dt.max().isoformat()
+                dtype_str = "datetime"
+            except Exception:
+                dtype_str = "datetime"
+                min_val = None
+                max_val = None
+        else:
+            # Treat object/string-like columns as string for downstream usage
+            if pd.api.types.is_string_dtype(s) or s.dtype == object:
+                dtype_str = "string"
+
+        rows.append(
+            {
+                "ordinal": int(idx),
+                "name": str(col),
+                "dtype": dtype_str,
+                "is_nullable": 1 if is_nullable else 0,
+                "distinct_count": distinct_count,
+                "min_val": min_val,
+                "max_val": max_val,
+            }
         )
-    return _legacy_analyze_and_store_columns(db_engine, dataset_id, df)
+
+    # Persist in a single transaction
+    with db_engine.begin() as conn:
+        conn.execute(text("DELETE FROM dataset_columns WHERE dataset_id = :id"), {"id": int(dataset_id)})
+        for r in rows:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO dataset_columns
+                        (dataset_id, ordinal, name, dtype, is_nullable, distinct_count, min_val, max_val)
+                    VALUES
+                        (:dataset_id, :ordinal, :name, :dtype, :is_nullable, :distinct_count, :min_val, :max_val)
+                    """
+                ),
+                {
+                    "dataset_id": int(dataset_id),
+                    "ordinal": r["ordinal"],
+                    "name": r["name"],
+                    "dtype": r["dtype"],
+                    "is_nullable": r["is_nullable"],
+                    "distinct_count": r["distinct_count"],
+                    "min_val": r["min_val"],
+                    "max_val": r["max_val"],
+                },
+            )
 
 
 # --- Additional dataset_files helpers ----------------------------------------------------------
