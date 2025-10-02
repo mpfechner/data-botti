@@ -8,23 +8,37 @@ import pandas as pd
 from sqlalchemy.exc import IntegrityError
 from services.models import QARecord
 
-# --- temporary shim for helpers.get_dataset_original_name --------------------------------------
-try:
-    from helpers import get_dataset_original_name as _legacy_get_dataset_original_name  # type: ignore[attr-defined]
-except Exception as _e:  # pragma: no cover
-    _legacy_get_dataset_original_name = None  # type: ignore[assignment]
-    _legacy_import_error = _e  # type: ignore[assignment]
-else:
-    _legacy_import_error = None  # type: ignore[assignment]
-
+# --- get_dataset_original_name: in-repo implementation (replaces legacy helper) ----------------
 
 def get_dataset_original_name(engine, dataset_id: int) -> str:
-    """Shim delegating to legacy helpers.get_dataset_original_name.
-    Keeps behavior identical while we migrate logic into repo.py.
+    """Return the original file name for a dataset.
+
+    Prefers the latest entry in dataset_files.original_name; falls back to datasets.filename.
+    Returns an empty string if neither is found.
     """
-    if _legacy_get_dataset_original_name is None:  # pragma: no cover
-        raise ImportError(f"Could not import legacy get_dataset_original_name: {_legacy_import_error}")
-    return _legacy_get_dataset_original_name(engine, dataset_id)
+    with engine.connect() as conn:
+        # Prefer most recent dataset_files.original_name
+        orig = conn.execute(
+            text(
+                """
+                SELECT original_name
+                FROM dataset_files
+                WHERE dataset_id = :id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"id": int(dataset_id)},
+        ).scalar()
+        if orig:
+            return str(orig)
+
+        # Fallback to datasets.filename
+        name = conn.execute(
+            text("SELECT filename FROM datasets WHERE id = :id"),
+            {"id": int(dataset_id)},
+        ).scalar()
+        return str(name) if name is not None else ""
 
 
 # --- temporary shim for helpers.build_dataset_context ------------------------------------------
