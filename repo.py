@@ -137,6 +137,7 @@ def get_dataset_file_meta(conn, dataset_id: int) -> Optional[Mapping]:
 
 def get_dataset_columns(conn, dataset_id: int):
     """Return ordered column metadata rows from dataset_columns for a dataset_id."""
+
     return conn.execute(
         text(
             """
@@ -148,6 +149,27 @@ def get_dataset_columns(conn, dataset_id: int):
         ),
         {"id": int(dataset_id)},
     ).mappings().all()
+
+
+# --- temporary shim for helpers.analyze_and_store_columns -------------------------------------
+try:
+    from helpers import analyze_and_store_columns as _legacy_analyze_and_store_columns  # type: ignore[attr-defined]
+except Exception as _e_cols:  # pragma: no cover
+    _legacy_analyze_and_store_columns = None  # type: ignore[assignment]
+    _legacy_import_error_cols = _e_cols  # type: ignore[assignment]
+else:
+    _legacy_import_error_cols = None  # type: ignore[assignment]
+
+
+def analyze_and_store_columns(db_engine, dataset_id: int, df):
+    """Shim delegating to legacy helpers.analyze_and_store_columns.
+    Keeps behavior identical while we migrate logic into repo.py.
+    """
+    if _legacy_analyze_and_store_columns is None:  # pragma: no cover
+        raise ImportError(
+            f"Could not import legacy analyze_and_store_columns: {_legacy_import_error_cols}"
+        )
+    return _legacy_analyze_and_store_columns(db_engine, dataset_id, df)
 
 
 # --- Additional dataset_files helpers ----------------------------------------------------------
