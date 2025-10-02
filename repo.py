@@ -7,6 +7,24 @@ import json
 from sqlalchemy.exc import IntegrityError
 from services.models import QARecord
 
+# --- temporary shim for helpers.get_dataset_original_name --------------------------------------
+try:
+    from helpers import get_dataset_original_name as _legacy_get_dataset_original_name  # type: ignore[attr-defined]
+except Exception as _e:  # pragma: no cover
+    _legacy_get_dataset_original_name = None  # type: ignore[assignment]
+    _legacy_import_error = _e  # type: ignore[assignment]
+else:
+    _legacy_import_error = None  # type: ignore[assignment]
+
+
+def get_dataset_original_name(engine, dataset_id: int) -> str:
+    """Shim delegating to legacy helpers.get_dataset_original_name.
+    Keeps behavior identical while we migrate logic into repo.py.
+    """
+    if _legacy_get_dataset_original_name is None:  # pragma: no cover
+        raise ImportError(f"Could not import legacy get_dataset_original_name: {_legacy_import_error}")
+    return _legacy_get_dataset_original_name(engine, dataset_id)
+
 
 class DuplicateEmailError(Exception):
     pass
