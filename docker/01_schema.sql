@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS dataset_files (
     dataset_id INT NOT NULL UNIQUE,
     original_name TEXT NOT NULL,
     size_bytes BIGINT,
-    file_hash CHAR(64) NOT NULL,
+    file_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     encoding VARCHAR(40),
     delimiter VARCHAR(8),
     stored_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -116,10 +116,10 @@ CREATE TABLE IF NOT EXISTS dataset_columns (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS qa_pairs (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  file_hash VARCHAR(64) NOT NULL,                -- Scope (z. B. Datei-Hash)
+  file_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,                -- Scope (z. B. Datei-Hash)
   question_original TEXT NOT NULL,
   question_norm TEXT NOT NULL,                   -- normalisierte Frage
-  question_hash CHAR(64) NOT NULL,               -- SHA-256 hex von question_norm
+  question_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,               -- SHA-256 hex von question_norm
   answer TEXT NULL,
   meta JSON NULL,                                -- {source, tags, ...}
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

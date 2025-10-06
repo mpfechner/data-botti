@@ -1,4 +1,5 @@
 from __future__ import annotations
+from db import get_engine
 from typing import Optional, Mapping
 from sqlalchemy import text
 from flask import current_app
@@ -388,19 +389,14 @@ def insert_dataset_and_file(
 
 # --- user repository helpers (used by routes/admin.py) -----------------------------------------
 
-def _get_engine_from_app():
-    try:
-        return current_app.config.get("DB_ENGINE")
-    except Exception:
-        return None
 
 
 def repo_list_users():
     """Return all users with id, email, username, is_admin."""
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         rows = conn.execute(
             text(
                 """
@@ -414,10 +410,10 @@ def repo_list_users():
 
 
 def repo_create_user(*, email: str, username: str | None, password_hash: str, is_admin: int = 0) -> int:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         try:
             res = conn.execute(
                 text(
@@ -452,10 +448,10 @@ def repo_create_user(*, email: str, username: str | None, password_hash: str, is
 
 
 def repo_update_user_password(*, user_id: int, password_hash: str) -> None:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         conn.execute(
             text(
                 """
@@ -468,10 +464,10 @@ def repo_update_user_password(*, user_id: int, password_hash: str) -> None:
 
 
 def repo_delete_user(*, user_id: int) -> None:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         conn.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": int(user_id)})
 
 
@@ -481,10 +477,10 @@ def repo_list_groups():
     """Return all groups with member_count.
     Columns: id, name, created_at, member_count
     """
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         rows = conn.execute(
             text(
                 """
@@ -506,10 +502,10 @@ ON DUPLICATE KEY UPDATE group_id = group_id
 
 
 def repo_create_group(*, name: str) -> int:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         try:
             res = conn.execute(text("INSERT INTO groups (name) VALUES (:name)"), {"name": name})
         except IntegrityError as e:
@@ -530,10 +526,10 @@ def repo_create_group(*, name: str) -> int:
 
 
 def repo_delete_group(*, group_id: int) -> None:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         conn.execute(text("DELETE FROM groups WHERE id = :id"), {"id": int(group_id)})
 
 
@@ -541,10 +537,10 @@ def repo_list_group_members(*, group_id: int):
     """Return members of a group with user info.
     Columns: id, email, username, is_admin, added_at
     """
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         rows = conn.execute(
             text(
                 """
@@ -561,10 +557,10 @@ def repo_list_group_members(*, group_id: int):
 
 
 def repo_add_user_to_group(*, user_id: int, group_id: int) -> None:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         try:
             # MySQL-friendly upsert to ignore duplicates
             conn.execute(
@@ -577,10 +573,10 @@ def repo_add_user_to_group(*, user_id: int, group_id: int) -> None:
 
 
 def repo_remove_user_from_group(*, user_id: int, group_id: int) -> None:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         conn.execute(
             text("DELETE FROM user_groups WHERE user_id = :uid AND group_id = :gid"),
             {"uid": int(user_id), "gid": int(group_id)},
@@ -589,10 +585,10 @@ def repo_remove_user_from_group(*, user_id: int, group_id: int) -> None:
 # --- admin guardrail helpers -------------------------------------------------------------------
 
 def repo_is_user_admin(*, user_id: int) -> bool:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         val = conn.execute(text("SELECT is_admin FROM users WHERE id = :id"), {"id": int(user_id)}).scalar()
     try:
         return bool(int(val)) if val is not None else False
@@ -601,10 +597,10 @@ def repo_is_user_admin(*, user_id: int) -> bool:
 
 
 def repo_count_admins() -> int:
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         n = conn.execute(text("SELECT COUNT(*) FROM users WHERE is_admin = 1")).scalar()
     try:
         return int(n) if n is not None else 0
@@ -651,10 +647,10 @@ def repo_qa_insert(
     meta: dict | None = None,
 ) -> int:
     """Insert new qa_pairs row and return its id."""
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         res = conn.execute(
             text(
                 """
@@ -688,10 +684,10 @@ def repo_qa_insert(
 
 def repo_qa_find_by_hash(*, file_hash: str, question_hash: str) -> QARecord | None:
     """Find a qa_pairs row by file_hash + question_hash. Returns QARecord or None."""
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         row = conn.execute(
             text(
                 """
@@ -708,10 +704,10 @@ def repo_qa_find_by_hash(*, file_hash: str, question_hash: str) -> QARecord | No
 # New: Find a qa_pairs row by id
 def repo_qa_find_by_id(*, qa_id: int) -> QARecord | None:
     """Find a qa_pairs row by id. Returns QARecord or None."""
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         row = conn.execute(
             text(
                 """
@@ -730,10 +726,10 @@ def repo_qa_find_by_id(*, qa_id: int) -> QARecord | None:
 
 def repo_qa_save_embedding(*, qa_id: int, model: str, dim: int, vec: bytes) -> None:
     """Insert or update an embedding vector for a given QA id and model."""
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         conn.execute(
             text(
                 """
@@ -751,10 +747,10 @@ def repo_qa_save_embedding(*, qa_id: int, model: str, dim: int, vec: bytes) -> N
 
 def repo_embeddings_by_file(*, file_hash: str, model: str):
     """Return list of embeddings (qa_id, dim, vec bytes) for a given file_hash and model."""
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         rows = conn.execute(
             text(
                 """
@@ -776,10 +772,10 @@ def repo_embeddings_by_file(*, file_hash: str, model: str):
 # QA-scoped embedding cleanup helper
 def repo_embeddings_delete_by_qa(*, qa_id: int, model: str) -> int:
     """Delete embeddings for a specific QA and model. Returns affected row count."""
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         res = conn.execute(
             text("DELETE FROM qa_embeddings WHERE qa_id = :qa_id AND model = :model"),
             {"qa_id": int(qa_id), "model": model},
@@ -792,10 +788,10 @@ def repo_embeddings_delete_by_qa(*, qa_id: int, model: str) -> int:
 
 def repo_qa_delete_by_id(*, qa_id: int) -> None:
     """Delete a qa_pairs row by id. Call after removing dependent embeddings."""
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         conn.execute(text("DELETE FROM qa_pairs WHERE id = :id"), {"id": int(qa_id)})
 
 
@@ -807,10 +803,10 @@ def repo_qa_without_embedding(*, file_hash: str | None = None, model: str = MODE
     """Return list of qa_pairs (id, file_hash, question_norm) that have no embedding stored for the given model.
     If file_hash is provided, filter by that file; else return across all files.
     """
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         if file_hash:
             rows = conn.execute(
                 text(
@@ -853,10 +849,10 @@ def repo_qa_semantic_candidates(*, file_hash: str, model: str):
     Joins qa_pairs with qa_embeddings to fetch the question/answer context + stored embedding vector.
     The vector is returned as raw bytes; the caller is responsible for decoding to numpy array.
     """
-    engine = _get_engine_from_app()
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         raise RuntimeError("DB engine not configured on current_app")
-    with engine.connect() as conn:
+    with eng.connect() as conn:
         rows = conn.execute(
             text(
                 """

@@ -108,8 +108,8 @@
   const promptBox = document.getElementById('prompt');
   const sugWrap = document.getElementById('suggest');
   const sugList = document.getElementById('suggest-list');
+  const suggestEndpoint = "{{ url_for('api_v1.api_search_only') }}"; // corrected path to API search endpoint
   let sugAbort = null;
-  let sugTimer = null;
 
   // Wenn kein eigener Scope-Hash eingegeben wird, kann (optional) der Standard-Hash des Datasets verwendet werden
   sel.addEventListener('change', () => {
@@ -176,11 +176,21 @@
     try {
       if (sugAbort) { sugAbort.abort(); }
       sugAbort = new AbortController();
-      const url = new URL('/search/suggest', window.location.origin);
-      url.searchParams.set('dataset_id', datasetId);
-      url.searchParams.set('q', q);
-      const resp = await fetch(url.toString(), { method: 'GET', signal: sugAbort.signal, headers: { 'Accept': 'application/json' } });
-      if (!resp.ok) { clearSuggestions(); return; }
+      const url = new URL(suggestEndpoint, window.location.origin);
+      const resp = await fetch(url.toString(), {
+        method: 'POST',
+        signal: sugAbort.signal,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ q, dataset_id: datasetId, top_k: 8 })
+      });
+      if (!resp.ok) {
+        console.warn('suggestions: HTTP', resp.status);
+        clearSuggestions();
+        return;
+      }
       const data = await resp.json().catch(() => []);
       // Expecting data like: { suggestions: ["...", "..."] } or ["...", "..."]
       const items = Array.isArray(data) ? data : (Array.isArray(data.suggestions) ? data.suggestions : []);
@@ -191,19 +201,20 @@
     }
   }
 
-  function debounceSuggest() {
-    if (sugTimer) clearTimeout(sugTimer);
-    sugTimer = setTimeout(() => {
-      const ds = sel.value;
-      const q = promptBox.value.trim();
-      fetchSuggestions(q, ds);
-    }, 180);
-  }
-
   if (promptBox) {
-    promptBox.addEventListener('input', debounceSuggest);
+    // Trigger suggestions when the last typed character is whitespace or a sentence end (. ? !)
+    promptBox.addEventListener('keyup', () => {
+      const v = promptBox.value;
+      if (!v || v.length < 1) { return; }
+      const lastChar = v[v.length - 1];
+      if (/[\s.?!]/.test(lastChar)) {
+          const ds = sel.value;
+          const q = v.trim();
+          fetchSuggestions(q, ds);
+      }
+    });
     promptBox.addEventListener('blur', () => setTimeout(clearSuggestions, 200)); // allow click
-    promptBox.addEventListener('focus', debounceSuggest);
+    // Keep focus behavior simple: do not auto-fetch on focus
   }
 
   // When dataset changes, clear suggestions

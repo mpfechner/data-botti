@@ -1,3 +1,4 @@
+from services.qa_service import QaService
 
 
 # scripts/test_call_llm_and_record.py
@@ -38,7 +39,7 @@ def main():
 
     with app_ctx():
         req = make_query_request(q_raw, file_hash)
-        content = call_llm_and_record(req, model="gpt-4o-mini", max_tokens=50)
+        content = QaService.answer(req, model="gpt-4o-mini", max_tokens=50)
 
         print("[LLM Content]", content)
         if req.token_usage:

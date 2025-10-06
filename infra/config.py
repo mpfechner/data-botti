@@ -46,3 +46,13 @@ def get_config() -> dict:
         "CONSENT_MAX_AGE_DAYS": int(os.getenv("CONSENT_MAX_AGE_DAYS", 7)),
         "SESSION_PERMANENT": False,
     }
+
+
+# Threshold for semantic match acceptance
+SEMANTIC_THRESHOLD = 0.90
+
+
+# LLM behavior settings
+DEFAULT_MODEL = "gpt-4o-mini"
+MAX_TOKENS = 800
+TEMPERATURE = 0.2

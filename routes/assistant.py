@@ -1,3 +1,4 @@
+from services.qa_service import call_llm_and_record
 from flask import Blueprint, render_template, request, current_app, session, redirect, url_for
 from sqlalchemy import text
 from services.ai_client import ask_model, call_model
@@ -170,7 +171,6 @@ def ai_prompt(dataset_id):
                 if _cols >= 20 or _rows >= 100_000:
                     inferred = _bump(inferred)
 
-                expected_output = inferred
                 current_app.logger.info(
                     "Auto-inferred expected_output=%s (len=%s, rows=%s, cols=%s)", inferred, L, _rows, _cols
                 )
@@ -183,7 +183,7 @@ def ai_prompt(dataset_id):
 
         selection_prompt = build_relevant_columns_prompt(prompt, rows, cols, column_summaries)
         from services.ai_router import MODEL_FAST
-        selection_result = ask_model(selection_prompt, expected_output="short", context_id=f"{dataset_id}_colsel", model=MODEL_FAST)
+        selection_result = call_llm_and_record(selection_prompt, context_id=f"{dataset_id}_colsel", model=MODEL_FAST)
 
         # Robustly normalize model output: ask_model may return either a string or (text, usage)
         if isinstance(selection_result, tuple):
@@ -267,12 +267,12 @@ def ai_prompt(dataset_id):
             from services.ai_router import MODEL_SMART
             model = MODEL_SMART
             current_app.logger.info(
-                "AI model chosen (user-forced SMART): %s (expected_output=%s)", model, expected_output
+                "AI model chosen (user-forced SMART): %s (%s)", model, expected_output
             )
         else:
-            model = choose_model(expected_output=expected_output, cache_ratio=None)
+            model = choose_model(expected_output=expected_output, cache_ratio=None, prompt=prompt, context=context)
             current_app.logger.info(
-                "AI model chosen: %s (expected_output=%s)", model, expected_output
+                "AI model chosen: %s (%s)", model, expected_output
             )
         messages = [
             {"role": "system", "content": system_prompt},

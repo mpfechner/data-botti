@@ -3,7 +3,8 @@ from typing import Optional
 import numpy as np
 from services.embeddings import embed_query
 from services.models import QARecord, QueryRequest
-from repo import repo_qa_find_by_hash, repo_qa_semantic_candidates
+from repo import repo_qa_find_by_hash, repo_qa_semantic_candidates, get_engine
+from sqlalchemy import text
 
 SEMANTIC_THRESHOLD = 0.90
 
@@ -71,6 +72,76 @@ INTENT_PROTOTYPES = {
 
 
 class SearchService:
+    @staticmethod
+    def _serialize_qa_record(rec):
+        """Return a JSON-serializable dict for a QARecord-like object."""
+        if hasattr(rec, "model_dump"):
+            try:
+                return rec.model_dump()
+            except Exception:
+                pass
+        if hasattr(rec, "to_dict"):
+            try:
+                return rec.to_dict()
+            except Exception:
+                pass
+        if isinstance(rec, dict):
+            return rec
+        return {
+            "id": getattr(rec, "id", None),
+            "question": getattr(rec, "question", None),
+            "answer": getattr(rec, "answer", None),
+        }
+
+    @staticmethod
+    def suggest_similar_questions(prompt: str, dataset_id: int, user_id: int, top_k: int = 3) -> dict:
+        # Schritt 1: Berechtigung prüfen
+        engine = get_engine()
+        with engine.begin() as conn:
+            result = conn.execute(text("""
+                SELECT d.id FROM datasets d
+                LEFT JOIN datasets_groups dg ON dg.dataset_id = d.id
+                LEFT JOIN user_groups ug ON ug.group_id = dg.group_id
+                WHERE d.id = :ds AND (d.user_id = :uid OR ug.user_id = :uid)
+            """), {"uid": user_id, "ds": dataset_id}).fetchone()
+            if not result:
+                return {"found": False, "decision": "unauthorized", "records": []}
+
+        from services.qa_service import make_query_request  # local import to avoid circular dependency
+        # Schritt 2: Exact Match per Hash
+        request = make_query_request(prompt)
+        if not getattr(request, "file_hash", None):
+            with engine.connect() as conn:
+                fh = conn.execute(text("SELECT file_hash FROM dataset_files WHERE dataset_id = :ds LIMIT 1"), {"ds": dataset_id}).scalar()
+                if fh:
+                    request.file_hash = fh
+        exact = None
+        if getattr(request, "file_hash", None) and getattr(request, "question_hash", None):
+            exact = repo_qa_find_by_hash(file_hash=request.file_hash, question_hash=request.question_hash)
+        if exact:
+            return {"found": True, "decision": "exact", "records": [SearchService._serialize_qa_record(exact)]}
+
+        # Schritt 3: Embedding & semantische Suche
+        embedding = embed_query(prompt)
+        if not getattr(request, "file_hash", None):
+            return {"found": False, "decision": "semantic", "records": []}
+        candidates = repo_qa_semantic_candidates(file_hash=request.file_hash, model="intfloat/multilingual-e5-base")
+        # truncate to top_k if needed
+        candidates = candidates[:top_k] if isinstance(candidates, list) else candidates
+        if not candidates:
+            return {"found": False, "decision": "semantic", "records": []}
+
+        # candidates come as tuples: (QARecord, dim, vec_bytes); drop non-serializable parts
+        cleaned = []
+        if isinstance(candidates, list):
+            for item in candidates:
+                try:
+                    rec, *_rest = item  # ignore dim and bytes
+                except Exception:
+                    rec = item
+                cleaned.append(SearchService._serialize_qa_record(rec))
+        return {"found": True, "decision": "semantic", "records": cleaned}
+
     """Main search orchestrator handling exact, intent-based analysis, semantic search, and fallback."""
 
     def search_exact(self, request: QueryRequest) -> Optional[QARecord]:

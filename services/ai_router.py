@@ -54,13 +54,17 @@ def _total_cost(model: str, in_tokens: int, out_tokens: int, cache_ratio: float)
 
 
 def choose_model(
-    expected_output: str,
+    expected_output: str | None,
     cache_ratio: float | None,
     *,
+    prompt: str | None = None,
+    context: str = "",
     est_in_tokens: int | None = None,
     est_out_tokens: int | None = None,
     price_delta_pref: float = 0.15,
 ) -> str:
+    if expected_output is None and prompt is not None:
+        expected_output = infer_expected_output(prompt, context=context)
     """
     Choose model with a quality‑first strategy; downgrade only if savings exceed a threshold.
 
@@ -115,3 +119,18 @@ def choose_model(
             return cheapest
 
     return preferred
+
+
+import tiktoken
+
+def count_tokens(text: str, model: str = "gpt-4") -> int:
+    encoding = tiktoken.encoding_for_model(model)
+    return len(encoding.encode(text))
+
+def infer_expected_output(prompt: str, context: str = "", model: str = "gpt-4") -> str:
+    token_count = count_tokens(prompt + " " + context, model=model)
+    if token_count < 100:
+        return "short"
+    elif token_count < 300:
+        return "medium"
+    return "long"

@@ -1,3 +1,5 @@
+from services.ai_router import choose_model
+from infra.config import DEFAULT_MODEL, MAX_TOKENS, TEMPERATURE
 import regex as re
 import unicodedata
 import hashlib
@@ -9,20 +11,17 @@ from repo import (
     repo_qa_find_by_hash,
     repo_qa_save_embedding,
     repo_embeddings_by_file,
-    repo_qa_find_by_id,
 )
 
 import numpy as np
 
-from services.embeddings import embed_query, embed_passage
+from services.embeddings import embed_query
 from services.ai_client import ask_model
-from services.models import QueryRequest, QARecord, TokenUsage, MatchResults
-from services.search_service import SearchService
+from services.models import QueryRequest, QARecord, MatchResults
 
 MODEL_NAME = "intfloat/multilingual-e5-base"
 logger = logging.getLogger(__name__)
 
-SEMANTIC_THRESHOLD = 0.90  # unified high-precision threshold (kept here for compatibility)
 
 def embedding_exists_for_qa(file_hash: str, qa_id: int, *, model: str = MODEL_NAME) -> bool:
     rows = repo_embeddings_by_file(file_hash=file_hash, model=model)
@@ -213,8 +212,16 @@ def make_query_request(question_raw: str, file_hash: str | None = None) -> Query
         file_hash=file_hash,
     )
 
-def call_llm_and_record(request: QueryRequest, *, model: str = "gpt-4o-mini", max_tokens: int = 800, temperature: float | None = None) -> str:
+def call_llm_and_record(request: QueryRequest, *, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS, temperature: float | None = TEMPERATURE, context_id: Optional[str] = None) -> str:
     """Call the LLM via ai_client.ask_model and attach TokenUsage to the QueryRequest."""
+    # Accept both QueryRequest and plain string prompts for backward compatibility
+    if isinstance(request, str):
+        request = make_query_request(request)
+
+    if model is None:
+        model = choose_model(expected_output=getattr(request, "expected_output", "short"), cache_ratio=0.0)
+
+    logger.info("llm_call", extra={"context_id": context_id, "model": model})
     content, usage = ask_model(
         prompt=request.question_raw,
         model=model,
@@ -232,6 +239,7 @@ def orchestrate(request: QueryRequest) -> MatchResults:
     Delegates to SearchService (exact → analysis → semantic → none).
     Never calls the LLM and never saves QAs.
     """
+    from services.search_service import SearchService  # local import to avoid circular dependency
     svc = SearchService()
     rec = svc.search_orchestrated(request)
     decision = getattr(request, "decision", None)
@@ -243,3 +251,31 @@ def orchestrate(request: QueryRequest) -> MatchResults:
     else:
         request.decision = "none"
         return MatchResults(mode="none", records=[], top_k=0, took_ms=0.0)
+
+
+
+class QaService:
+    @staticmethod
+    def answer(request: QueryRequest) -> dict:
+        """Orchestriert den gesamten QA-Prozess."""
+        from services.search_service import search_orchestrated
+        from services.qa_service import call_llm_and_record, save_qa
+
+        # Suche nach semantisch ähnlicher Frage
+        match = search_orchestrated(request)
+        if match:
+            return {
+                "source": "search",
+                "match": match
+            }
+
+        # Kein Treffer → LLM befragen
+        answer = call_llm_and_record(request)
+
+        # Antwort speichern
+        save_qa(request.question, answer, request.user_id)
+
+        return {
+            "source": "llm",
+            "answer": answer
+        }
