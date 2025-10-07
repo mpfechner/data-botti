@@ -7,6 +7,8 @@ from repo import repo_qa_find_by_hash, repo_qa_semantic_candidates, get_engine
 from sqlalchemy import text
 
 SEMANTIC_THRESHOLD = 0.90
+SUGGEST_MIN_SCORE = 0.80  # stricter floor for suggestions
+SUGGEST_WINDOW = 0.06     # slightly wider band to reduce false negatives
 
 INTENT_PROTOTYPES = {
     "analysis": [
@@ -70,6 +72,20 @@ INTENT_PROTOTYPES = {
     ],
 }
 
+# --- simple lexical gate helpers for suggestion quality ------------------------------------
+STOPWORDS = {
+    # de
+    "der", "die", "das", "und", "oder", "ein", "eine", "ist", "sind", "mit", "im", "in", "an", "am", "auf", "zu", "von", "für", "den", "dem", "des", "auch", "wie", "was", "wer", "wo", "wann", "warum",
+    # en
+    "the", "and", "or", "a", "an", "is", "are", "with", "in", "on", "to", "of", "for", "as", "by", "at", "be", "this", "that", "which",
+}
+
+def _sig_tokens(text: str) -> set[str]:
+    import re
+    if not text:
+        return set()
+    toks = re.findall(r"[\wÄÖÜäöüß]+", text.lower())
+    return {t for t in toks if len(t) >= 4 and t not in STOPWORDS}
 
 class SearchService:
     @staticmethod
@@ -112,7 +128,7 @@ class SearchService:
         request = make_query_request(prompt)
         if not getattr(request, "file_hash", None):
             with engine.connect() as conn:
-                fh = conn.execute(text("SELECT file_hash FROM dataset_files WHERE dataset_id = :ds LIMIT 1"), {"ds": dataset_id}).scalar()
+                fh = conn.execute(text("SELECT file_hash FROM dataset_files WHERE dataset_id = :ds ORDER BY id DESC LIMIT 1"), {"ds": dataset_id}).scalar()
                 if fh:
                     request.file_hash = fh
         exact = None
@@ -126,21 +142,161 @@ class SearchService:
         if not getattr(request, "file_hash", None):
             return {"found": False, "decision": "semantic", "records": []}
         candidates = repo_qa_semantic_candidates(file_hash=request.file_hash, model="intfloat/multilingual-e5-base")
-        # truncate to top_k if needed
-        candidates = candidates[:top_k] if isinstance(candidates, list) else candidates
-        if not candidates:
+        # --- Score candidates via cosine similarity and apply a soft threshold for suggestions ---
+        query_vec = np.asarray(embedding, dtype=np.float32)
+        if query_vec.size == 0:
             return {"found": False, "decision": "semantic", "records": []}
 
-        # candidates come as tuples: (QARecord, dim, vec_bytes); drop non-serializable parts
-        cleaned = []
-        if isinstance(candidates, list):
-            for item in candidates:
+        # Pre-compute significant tokens from the query for a lexical fallback
+        q_tokens = _sig_tokens(prompt)
+
+        def _db_lexical_fallback() -> list[dict]:
+            """Fallback: query recent QA pairs for this file_hash and rank by token overlap."""
+            if not getattr(request, "file_hash", None):
+                return []
+            try:
+                with engine.connect() as conn:
+                    rows = conn.execute(text("""
+                        SELECT id, question_original AS question, answer
+                        FROM qa_pairs
+                        WHERE file_hash = :fh
+                        ORDER BY created_at DESC
+                        LIMIT 200
+                    """), {"fh": request.file_hash}).fetchall()
+            except Exception:
+                return []
+            results: list[tuple[dict, float]] = []
+            for rid, qtext, ans in rows:
+                qtext = qtext or ""
+                ans = ans or ""
+                r_tokens = _sig_tokens(qtext + " " + ans)
+                overlap = q_tokens & r_tokens
+                has_long = any(len(t) >= 6 for t in overlap)
+                if overlap and (has_long or len(overlap) >= 2):
+                    # pseudo score by lexical overlap size normalized by query token count
+                    pseudo = len(overlap) / max(1, len(q_tokens))
+                    results.append(({"id": rid, "question": qtext, "answer": ans}, pseudo))
+            results.sort(key=lambda it: it[1], reverse=True)
+            top_hits = results[:top_k]
+            cleaned: list[dict] = []
+            for rec_dict, s in top_hits:
+                rec_out = dict(rec_dict)
                 try:
-                    rec, *_rest = item  # ignore dim and bytes
+                    rec_out["score"] = round(float(s), 4)
                 except Exception:
-                    rec = item
-                cleaned.append(SearchService._serialize_qa_record(rec))
-        return {"found": True, "decision": "semantic", "records": cleaned}
+                    pass
+                cleaned.append(rec_out)
+            return cleaned
+
+        scored: list[tuple[object, float]] = []
+        lexical_hits: list[tuple[object, float, int]] = []  # (rec, score, overlap_size)
+        for item in (candidates or []):
+            try:
+                rec, dim, vec_bytes = item  # expected shape from repo
+            except Exception:
+                # Fallback if repo returns only the record or a different tuple
+                rec, dim, vec_bytes = (item, None, None)
+            try:
+                cand_vec = np.frombuffer(vec_bytes, dtype=np.float32) if vec_bytes is not None else None
+                if cand_vec is None or cand_vec.size == 0:
+                    continue
+                denom = (np.linalg.norm(query_vec) * np.linalg.norm(cand_vec))
+                if denom == 0:
+                    continue
+                score = float(np.dot(query_vec, cand_vec) / denom)
+                scored.append((rec, score))
+
+                # Lexical overlap tokens between query and candidate (question+answer)
+                q_text = getattr(rec, "question", None) or ""
+                a_text = getattr(rec, "answer", None) or ""
+                r_tokens = _sig_tokens(q_text + " " + a_text)
+                overlap_size = len(q_tokens & r_tokens)
+                lexical_hits.append((rec, score, overlap_size))
+            except Exception:
+                continue
+
+        if not scored:
+            # No embedding candidates available → try DB lexical fallback
+            db_hits = _db_lexical_fallback()
+            if db_hits:
+                return {"found": True, "decision": "semantic", "records": db_hits}
+            return {"found": False, "decision": "semantic", "records": []}
+
+        best_score = max(s for _r, s in scored)
+        soft_cut = max(SUGGEST_MIN_SCORE, best_score - SUGGEST_WINDOW)
+        filtered = [(r, s) for (r, s) in scored if s >= soft_cut]
+
+        # Lexical gate: require at least one significant token overlap between query and candidate
+        filtered2 = []
+        for rec, s in filtered:
+            q_text = getattr(rec, "question", None) or ""
+            a_text = getattr(rec, "answer", None) or ""
+            r_tokens = _sig_tokens(q_text + " " + a_text)
+            overlap = q_tokens & r_tokens
+            # require (i) at least one shared significant token AND (ii) either a long-token match or >=2 overlaps
+            has_long = any(len(t) >= 6 for t in overlap)
+            if overlap and (has_long or len(overlap) >= 2):
+                filtered2.append((rec, s))
+        filtered = filtered2
+        if not filtered:
+            # --- Fallback: lexical-only shortlist when semantic thresholding drops all ---
+            # Pick candidates with any overlap (>=1) and rank by overlap size, then by cosine score
+            lexical_only = [(rec, sc, ov) for (rec, sc, ov) in lexical_hits if ov >= 1]
+            if not lexical_only:
+                # No embedding-based lexical matches → try DB lexical fallback
+                db_hits = _db_lexical_fallback()
+                if db_hits:
+                    return {"found": True, "decision": "semantic", "records": db_hits}
+                # --- NEW: Top-1 cosine fallback when everything else yields no hit ---
+                if scored:
+                    best_rec, best_s = max(scored, key=lambda rs: rs[1])
+                    item = SearchService._serialize_qa_record(best_rec)
+                    try:
+                        item["score"] = round(float(best_s), 4)
+                    except Exception:
+                        pass
+                    return {"found": True, "decision": "semantic", "records": [item]}
+                return {"found": False, "decision": "semantic", "records": []}
+            lexical_only.sort(key=lambda rso: (rso[2], rso[1]), reverse=True)
+            picked = [(rec, sc) for (rec, sc, _ov) in lexical_only[:top_k]]
+
+            cleaned = []
+            for rec, s in picked:
+                item = SearchService._serialize_qa_record(rec)
+                try:
+                    item["score"] = round(float(s), 4)
+                except Exception:
+                    pass
+                cleaned.append(item)
+            return {"found": bool(cleaned), "decision": "semantic", "records": cleaned}
+
+        # Deduplicate by record id (fallback to question text if id missing)
+        seen = set()
+        deduped = []
+        for rec, s in filtered:
+            key = getattr(rec, "id", None)
+            if key is None:
+                key = (getattr(rec, "question", None), getattr(rec, "answer", None))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append((rec, s))
+
+        # Sort by score descending and cut to top_k
+        deduped.sort(key=lambda rs: rs[1], reverse=True)
+        top = deduped[:top_k]
+
+        cleaned = []
+        for rec, s in top:
+            item = SearchService._serialize_qa_record(rec)
+            # Optionally include score for UI transparency (ignored by UI if not used)
+            try:
+                item["score"] = round(float(s), 4)
+            except Exception:
+                pass
+            cleaned.append(item)
+
+        return {"found": bool(cleaned), "decision": "semantic", "records": cleaned}
 
     """Main search orchestrator handling exact, intent-based analysis, semantic search, and fallback."""
 

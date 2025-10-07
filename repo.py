@@ -874,3 +874,39 @@ def repo_qa_semantic_candidates(*, file_hash: str, model: str):
         rec = _row_to_qarecord(row)
         result.append((rec, int(row["dim"]) if row.get("dim") is not None else None, row.get("vec")))
     return result
+
+
+def repo_qa_candidates_for_dataset(*, dataset_id: int, model: str, limit: int = 50):
+    """Return list of (QARecord, dim, vec_bytes) for a given dataset_id and embedding model.
+
+    This joins `dataset_files` (to resolve the dataset's file_hash) with `qa_pairs` and `qa_embeddings`.
+    The vector is returned as raw bytes; the caller is responsible for decoding to a numpy array.
+    Results are ordered by newest question first and limited by `limit`.
+    """
+    eng = get_engine()
+    if eng is None:
+        raise RuntimeError("DB engine not configured on current_app")
+    with eng.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT
+                    qp.id, qp.file_hash, qp.question_original, qp.question_norm,
+                    qp.question_hash, qp.answer, qp.meta, qp.created_at,
+                    qe.dim AS dim, qe.vec AS vec
+                FROM dataset_files df
+                JOIN qa_pairs qp ON qp.file_hash = df.file_hash
+                JOIN qa_embeddings qe ON qe.qa_id = qp.id AND qe.model = :model
+                WHERE df.dataset_id = :dsid
+                ORDER BY qp.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"dsid": int(dataset_id), "model": model, "limit": int(limit)},
+        ).mappings().all()
+
+    result = []
+    for row in rows:
+        rec = _row_to_qarecord(row)
+        result.append((rec, int(row["dim"]) if row.get("dim") is not None else None, row.get("vec")))
+    return result

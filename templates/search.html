@@ -17,6 +17,16 @@
   .suggest-item { padding: 8px 10px; cursor: pointer; }
   .suggest-item:hover { background: #f5faff; }
   .suggest-empty { color:#777; font-size:0.9rem; margin-top:4px; }
+  .suggest-empty.loading { display:flex; align-items:center; gap:8px; }
+  .suggest-empty.loading::before {
+    content:"";
+    width:12px; height:12px;
+    border:2px solid #3a6df0;
+    border-top-color:transparent;
+    border-radius:50%;
+    animation:spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
 </style>
 
 <h2>Frage stellen</h2>
@@ -173,6 +183,12 @@
 
   async function fetchSuggestions(q, datasetId) {
     if (!q || q.length < 2 || !datasetId) { clearSuggestions(); return; }
+    // show loading state
+    clearSuggestions();
+    if (sugList && sugWrap) {
+      sugList.innerHTML = '<li class="suggest-item"><span class="suggest-empty loading">Lade Vorschläge…</span></li>';
+      sugWrap.style.display = "block";
+    }
     try {
       if (sugAbort) { sugAbort.abort(); }
       sugAbort = new AbortController();
@@ -191,9 +207,18 @@
         clearSuggestions();
         return;
       }
-      const data = await resp.json().catch(() => []);
-      // Expecting data like: { suggestions: ["...", "..."] } or ["...", "..."]
-      const items = Array.isArray(data) ? data : (Array.isArray(data.suggestions) ? data.suggestions : []);
+      const data = await resp.json().catch(() => ({}));
+      // Backend format: { ok:true, found:bool, decision:"semantic"|"exact", records:[{question, answer, ...}] }
+      let items = [];
+      if (data && data.ok && Array.isArray(data.records)) {
+        items = data.records
+          .map(r => (r && (r.question || r.answer || '')).toString())
+          .filter(Boolean);
+      } else if (Array.isArray(data.suggestions)) {
+        items = data.suggestions;
+      } else if (Array.isArray(data)) {
+        items = data;
+      }
       renderSuggestions(items.slice(0, 8));
     } catch (e) {
       // Ignore errors (network/abort), just hide list
