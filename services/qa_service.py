@@ -253,29 +253,44 @@ def orchestrate(request: QueryRequest) -> MatchResults:
         return MatchResults(mode="none", records=[], top_k=0, took_ms=0.0)
 
 
-
 class QaService:
     @staticmethod
     def answer(request: QueryRequest) -> dict:
-        """Orchestriert den gesamten QA-Prozess."""
-        from services.search_service import search_orchestrated
-        from services.qa_service import call_llm_and_record, save_qa
+        """Orchestriert den gesamten QA-Prozess.
 
-        # Suche nach semantisch ähnlicher Frage
-        match = search_orchestrated(request)
+        Ablauf (sicher gegen zirkuläre Importe):
+        1. Lokaler Import von SearchService (innerhalb der Funktion) um zirkuläre Abhängigkeiten zu vermeiden.
+        2. Suche mittels SearchService.search_orchestrated(request). Falls ein Treffer vorliegt, sofort als Quelle "search" zurückgeben.
+        3. Falls kein Treffer, LLM mit call_llm_and_record(request) befragen und die Antwort speichern (save_qa) — hierbei werden die lokal definierten Funktionen in diesem Modul verwendet (keine zusätzlichen Importe), damit keine Import-Zyklen entstehen.
+        """
+        from services.search_service import SearchService  # local import to avoid circular dependency
+
+        svc = SearchService()
+        match = svc.search_orchestrated(request)
         if match:
             return {
                 "source": "search",
-                "match": match
+                "match": match,
             }
 
-        # Kein Treffer → LLM befragen
+        # Kein Treffer -> LLM befragen
         answer = call_llm_and_record(request)
 
-        # Antwort speichern
-        save_qa(request.question, answer, request.user_id)
+        # Antwort speichern (verwende die in diesem Modul vorhandene save_qa-Funktion).
+        # save_qa signature: save_qa(file_hash, question_original, question_norm, question_hash, answer=None, meta=None)
+        try:
+            save_qa(
+                request.file_hash if hasattr(request, "file_hash") else None,
+                request.question_raw if hasattr(request, "question_raw") else "",
+                request.question_norm if hasattr(request, "question_norm") else normalize_question(request.question_raw if hasattr(request, "question_raw") else ""),
+                request.question_hash if hasattr(request, "question_hash") else hash_question(normalize_question(request.question_raw if hasattr(request, "question_raw") else "")),
+                answer=answer,
+            )
+        except Exception:
+            # Do not block on save errors; log silently
+            logger.exception("qa_save_failed")
 
         return {
             "source": "llm",
-            "answer": answer
+            "answer": answer,
         }
