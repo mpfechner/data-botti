@@ -798,6 +798,7 @@ def repo_qa_delete_by_id(*, qa_id: int) -> None:
 # --- helper: list qa_pairs without embedding for a model --------------------------------------
 
 MODEL_NAME = "intfloat/multilingual-e5-base"  # fallback default if not present elsewhere
+GLOBAL_SEED_FILE_HASH = "seed_data"
 
 def repo_qa_without_embedding(*, file_hash: str | None = None, model: str = MODEL_NAME):
     """Return list of qa_pairs (id, file_hash, question_norm) that have no embedding stored for the given model.
@@ -909,4 +910,72 @@ def repo_qa_candidates_for_dataset(*, dataset_id: int, model: str, limit: int = 
     for row in rows:
         rec = _row_to_qarecord(row)
         result.append((rec, int(row["dim"]) if row.get("dim") is not None else None, row.get("vec")))
+    return result
+
+
+# New: Return QA candidates for dataset, optionally including global seed QA pairs
+def repo_qa_candidates_for_dataset_with_seed(*, dataset_id: int, model: str, include_seed: bool = True, limit: int = 100):
+    """Return list of (QARecord, dim, vec_bytes) for a given dataset_id and embedding model,
+    optionally UNIONed with global seed QA pairs (file_hash == GLOBAL_SEED_FILE_HASH).
+
+    Results are ordered by newest question first and limited by `limit`.
+    """
+    eng = get_engine()
+    if eng is None:
+        raise RuntimeError("DB engine not configured on current_app")
+
+    if include_seed:
+        sql = text(
+            """
+            (
+                SELECT
+                    qp.id, qp.file_hash, qp.question_original, qp.question_norm,
+                    qp.question_hash, qp.answer, qp.meta, qp.created_at,
+                    qe.dim AS dim, qe.vec AS vec
+                FROM dataset_files df
+                JOIN qa_pairs qp ON qp.file_hash = df.file_hash
+                JOIN qa_embeddings qe ON qe.qa_id = qp.id AND qe.model = :model
+                WHERE df.dataset_id = :dsid
+            )
+            UNION ALL
+            (
+                SELECT
+                    qp.id, qp.file_hash, qp.question_original, qp.question_norm,
+                    qp.question_hash, qp.answer, qp.meta, qp.created_at,
+                    qe.dim AS dim, qe.vec AS vec
+                FROM qa_pairs qp
+                JOIN qa_embeddings qe ON qe.qa_id = qp.id AND qe.model = :model
+                WHERE qp.file_hash = :seed_fh
+            )
+            ORDER BY created_at DESC
+            LIMIT :limit
+            """
+        )
+        params = {"dsid": int(dataset_id), "model": model, "seed_fh": GLOBAL_SEED_FILE_HASH, "limit": int(limit)}
+    else:
+        sql = text(
+            """
+            SELECT
+                qp.id, qp.file_hash, qp.question_original, qp.question_norm,
+                qp.question_hash, qp.answer, qp.meta, qp.created_at,
+                qe.dim AS dim, qe.vec AS vec
+            FROM dataset_files df
+            JOIN qa_pairs qp ON qp.file_hash = df.file_hash
+            JOIN qa_embeddings qe ON qe.qa_id = qp.id AND qe.model = :model
+            WHERE df.dataset_id = :dsid
+            ORDER BY qp.created_at DESC
+            LIMIT :limit
+            """
+        )
+        params = {"dsid": int(dataset_id), "model": model, "limit": int(limit)}
+
+    with eng.connect() as conn:
+        rows = conn.execute(sql, params).mappings().all()
+
+    result = []
+    for row in rows:
+        rec = _row_to_qarecord(row)
+        result.append(
+            (rec, int(row["dim"]) if row.get("dim") is not None else None, row.get("vec"))
+        )
     return result

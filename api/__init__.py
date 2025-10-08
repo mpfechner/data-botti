@@ -216,5 +216,40 @@ def api_search_only():
     prompt = get_body_field("prompt")
     dataset_id = int(get_body_field("dataset_id"))
     top_k = int(get_body_field("top_k") or 3)
+    # --- logging: request summary ---
+    t0 = perf_counter()
+    try:
+        q_preview = (prompt or "")[:80].replace("\n", " ")
+        q_len = len(prompt or "")
+    except Exception:
+        q_preview, q_len = "", 0
+    current_app.logger.info(
+        "api/search start uid=%s dataset_id=%s top_k=%s q='%s' len=%s",
+        user_id, dataset_id, top_k, q_preview, q_len
+    )
     result = SearchService.suggest_similar_questions(prompt, dataset_id, user_id, top_k=top_k)
+    # --- logging: result summary ---
+    try:
+        elapsed_ms = (perf_counter() - t0) * 1000.0
+        if isinstance(result, dict):
+            decision = result.get("decision")
+            found = result.get("found")
+            records = result.get("records") or []
+            n = len(records)
+            top_score = None
+            if records and isinstance(records[0], dict):
+                ts = records[0].get("score")
+                if isinstance(ts, (int, float)):
+                    top_score = f"{ts:.4f}"
+            current_app.logger.info(
+                "api/search done decision=%s found=%s n=%s top_score=%s dt_ms=%.1f",
+                decision, found, n, top_score, elapsed_ms
+            )
+        else:
+            current_app.logger.info(
+                "api/search done (non-dict result) dt_ms=%.1f",
+                elapsed_ms
+            )
+    except Exception:
+        current_app.logger.exception("api/search logging failed")
     return json_ok(result)

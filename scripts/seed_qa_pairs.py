@@ -5,10 +5,18 @@ from pathlib import Path
 from typing import List, Tuple
 from sqlalchemy import create_engine, text
 
+
 # --- Ensure project root is importable so "services.*" works when run as: python scripts/seed_qa_pairs.py
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+# --- Load .env early so repo/qa_service can read MYSQL_* / DATABASE_URL
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+except Exception:
+    pass
 
 # --- Import embedding backfill from app code (re-uses the normal embedding pipeline)
 from services.qa_service import backfill_missing_embeddings

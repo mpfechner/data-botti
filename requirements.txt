@@ -23,3 +23,4 @@ torch>=2.2,<3
 pytest
 regex==2025.9.1
 tiktoken==0.7.0
+cross-encoder==1.0.0

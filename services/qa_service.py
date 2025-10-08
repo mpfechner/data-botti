@@ -19,6 +19,8 @@ from services.embeddings import embed_query
 from services.ai_client import ask_model
 from services.models import QueryRequest, QARecord, MatchResults
 
+from db import get_engine
+
 MODEL_NAME = "intfloat/multilingual-e5-base"
 logger = logging.getLogger(__name__)
 
@@ -176,6 +178,8 @@ def backfill_missing_embeddings(file_hash: str | None = None, *, model: str = MO
     """
     from repo import repo_qa_without_embedding
 
+    eng = get_engine()
+
     rows = repo_qa_without_embedding(file_hash=file_hash, model=model)
     total = len(rows)
     logger.info("backfill_start", extra={"file_hash": file_hash, "total": total})
@@ -184,7 +188,9 @@ def backfill_missing_embeddings(file_hash: str | None = None, *, model: str = MO
     for r in rows:
         qa_id = r["id"]
         fh = r["file_hash"]
-        qn = r["question_norm"]
+        qn = r.get("question_norm")
+        if not qn:
+            continue
         ok = upsert_embedding_for_qa(file_hash=fh, qa_id=qa_id, question_norm=qn, model=model)
         processed += 1
         if processed % batch_size == 0:
