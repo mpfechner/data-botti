@@ -1,5 +1,5 @@
 
-
+import os
 import logging
 from typing import List
 from threading import Lock
@@ -26,7 +26,12 @@ def _load_model():
         if _model is None:
             _device = _get_device()
             logging.info(f"Loading model '{_MODEL_NAME}' on device '{_device}'")
-            _model = SentenceTransformer(_MODEL_NAME, device=_device)
+            _model = SentenceTransformer(
+                _MODEL_NAME,
+                device=_device,
+                cache_folder=os.getenv("SENTENCE_TRANSFORMERS_HOME"),
+                local_files_only=os.getenv("HF_HUB_OFFLINE") in ("1", "true", "True")
+            )
     return _model, _device
 
 def embed_query(text: str) -> List[float]:

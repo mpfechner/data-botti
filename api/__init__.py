@@ -214,8 +214,25 @@ def api_search_only():
     from services.search_service import SearchService
     user_id = current_api_user_id()
     prompt = get_body_field("prompt")
+    if not prompt:
+        prompt = get_body_field("q")
     dataset_id = int(get_body_field("dataset_id"))
     top_k = int(get_body_field("top_k") or 3)
+    # Optional: include_seeds (default True). Accepts bool, 0/1, "true"/"false", etc.
+    raw_include = get_body_field("include_seeds", True)
+    include_seeds = True
+    if isinstance(raw_include, bool):
+        include_seeds = raw_include
+    elif isinstance(raw_include, str):
+        include_seeds = raw_include.strip().lower() in ("1", "true", "yes", "y", "on")
+    elif isinstance(raw_include, (int, float)):
+        try:
+            include_seeds = int(raw_include) != 0
+        except Exception:
+            include_seeds = True
+    # Frontend safeguard: if request comes from browser (no API token), never include seeds
+    if getattr(g, "api_token", None) is None:
+        include_seeds = False
     # --- logging: request summary ---
     t0 = perf_counter()
     try:
@@ -224,10 +241,10 @@ def api_search_only():
     except Exception:
         q_preview, q_len = "", 0
     current_app.logger.info(
-        "api/search start uid=%s dataset_id=%s top_k=%s q='%s' len=%s",
-        user_id, dataset_id, top_k, q_preview, q_len
+        "api/search start uid=%s dataset_id=%s top_k=%s q='%s' len=%s include_seeds=%s",
+        user_id, dataset_id, top_k, q_preview, q_len, include_seeds
     )
-    result = SearchService.suggest_similar_questions(prompt, dataset_id, user_id, top_k=top_k)
+    result = SearchService.suggest_similar_questions(prompt, dataset_id, user_id, top_k=top_k, include_seeds=include_seeds)
     # --- logging: result summary ---
     try:
         elapsed_ms = (perf_counter() - t0) * 1000.0

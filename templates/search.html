@@ -192,6 +192,20 @@
     try {
       if (sugAbort) { sugAbort.abort(); }
       sugAbort = new AbortController();
+
+      const includeSeeds = false; // Never show seed QAs in typeahead
+      const fhVal = (fileHashInput && fileHashInput.value && fileHashInput.value.trim()) ? fileHashInput.value.trim() : null;
+
+      const payload = {
+        q,
+        dataset_id: datasetId,
+        top_k: 8,
+        include_seeds: includeSeeds
+      };
+      if (fhVal) {
+        payload.file_hash = fhVal;
+      }
+
       const url = new URL(suggestEndpoint, window.location.origin);
       const resp = await fetch(url.toString(), {
         method: 'POST',
@@ -200,7 +214,7 @@
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ q, dataset_id: datasetId, top_k: 8 })
+        body: JSON.stringify(payload)
       });
       if (!resp.ok) {
         console.warn('suggestions: HTTP', resp.status);

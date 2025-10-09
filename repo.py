@@ -979,3 +979,202 @@ def repo_qa_candidates_for_dataset_with_seed(*, dataset_id: int, model: str, inc
             (rec, int(row["dim"]) if row.get("dim") is not None else None, row.get("vec"))
         )
     return result
+
+# New (lean projection): embedding-only candidates for a dataset
+def repo_embedding_candidates_for_dataset(
+    *,
+    dataset_id: int,
+    model: str,
+    include_seeds: bool = True,
+    limit: int = 200,
+):
+    """
+    Return embedding candidates for semantic search as a lean projection.
+
+    Columns returned (mappings):
+      - qa_id (int)
+      - question_norm (str)
+      - dim (int)
+      - vec (bytes)
+      - src (str)  -> 'file' for dataset file QAs, 'seed' for global seeds
+
+    Notes:
+      - Uses only `qa_pairs.question_norm` + `qa_embeddings.vec` (no answers),
+        because ranking works on questions-only.
+      - Seeds are constrained to file_hash == GLOBAL_SEED_FILE_HASH AND qa_seed = 1.
+    """
+    eng = get_engine()
+    if eng is None:
+        raise RuntimeError("DB engine not configured on current_app")
+
+    if include_seeds:
+        sql = text(
+            """
+            (
+                SELECT
+                    qp.id        AS qa_id,
+                    qp.question_norm,
+                    qe.dim       AS dim,
+                    qe.vec       AS vec,
+                    'file'       AS src,
+                    qp.created_at
+                FROM dataset_files df
+                JOIN qa_pairs qp
+                  ON qp.file_hash = df.file_hash
+                JOIN qa_embeddings qe
+                  ON qe.qa_id = qp.id AND qe.model = :model
+                WHERE df.dataset_id = :dsid
+            )
+            UNION ALL
+            (
+                SELECT
+                    qp.id        AS qa_id,
+                    qp.question_norm,
+                    qe.dim       AS dim,
+                    qe.vec       AS vec,
+                    'seed'       AS src,
+                    qp.created_at
+                FROM qa_pairs qp
+                JOIN qa_embeddings qe
+                  ON qe.qa_id = qp.id AND qe.model = :model
+                WHERE qp.file_hash = :seed_fh
+                  AND COALESCE(qp.is_seed, 0) = 1
+            )
+            ORDER BY created_at DESC
+            LIMIT :limit
+            """
+        )
+        params = {
+            "dsid": int(dataset_id),
+            "model": model,
+            "seed_fh": GLOBAL_SEED_FILE_HASH,
+            "limit": int(limit),
+        }
+    else:
+        sql = text(
+            """
+            SELECT
+                qp.id        AS qa_id,
+                qp.question_norm,
+                qe.dim       AS dim,
+                qe.vec       AS vec,
+                'file'       AS src,
+                qp.created_at
+            FROM dataset_files df
+            JOIN qa_pairs qp
+              ON qp.file_hash = df.file_hash
+            JOIN qa_embeddings qe
+              ON qe.qa_id = qp.id AND qe.model = :model
+            WHERE df.dataset_id = :dsid
+            ORDER BY qp.created_at DESC
+            LIMIT :limit
+            """
+        )
+        params = {"dsid": int(dataset_id), "model": model, "limit": int(limit)}
+
+    with eng.connect() as conn:
+        rows = conn.execute(sql, params).mappings().all()
+
+    # Strip created_at from the public return shape
+    return [
+        {
+            "qa_id": int(r["qa_id"]),
+            "question_norm": r["question_norm"] or "",
+            "dim": int(r["dim"]) if r.get("dim") is not None else None,
+            "vec": r["vec"],
+            "src": r["src"],
+        }
+        for r in rows
+    ]
+
+
+# New (lean projection): embedding-only candidates for a file_hash
+def repo_embedding_candidates_for_file(
+    *,
+    file_hash: str,
+    model: str,
+    include_seeds: bool = True,
+    limit: int = 200,
+):
+    """
+    Same as repo_embedding_candidates_for_dataset(), but restricted to a given file_hash.
+    Returns a list of mappings with keys: qa_id, question_norm, dim, vec, src.
+    """
+    eng = get_engine()
+    if eng is None:
+        raise RuntimeError("DB engine not configured on current_app")
+
+    if include_seeds:
+        sql = text(
+            """
+            (
+                SELECT
+                    qp.id        AS qa_id,
+                    qp.question_norm,
+                    qe.dim       AS dim,
+                    qe.vec       AS vec,
+                    'file'       AS src,
+                    qp.created_at
+                FROM qa_pairs qp
+                JOIN qa_embeddings qe
+                  ON qe.qa_id = qp.id AND qe.model = :model
+                WHERE qp.file_hash = :fh
+            )
+            UNION ALL
+            (
+                SELECT
+                    qp.id        AS qa_id,
+                    qp.question_norm,
+                    qe.dim       AS dim,
+                    qe.vec       AS vec,
+                    'seed'       AS src,
+                    qp.created_at
+                FROM qa_pairs qp
+                JOIN qa_embeddings qe
+                  ON qe.qa_id = qp.id AND qe.model = :model
+                WHERE qp.file_hash = :seed_fh
+                  AND COALESCE(qp.is_seed, 0) = 1
+            )
+            ORDER BY created_at DESC
+            LIMIT :limit
+            """
+        )
+        params = {
+            "fh": file_hash,
+            "model": model,
+            "seed_fh": GLOBAL_SEED_FILE_HASH,
+            "limit": int(limit),
+        }
+    else:
+        sql = text(
+            """
+            SELECT
+                qp.id        AS qa_id,
+                qp.question_norm,
+                qe.dim       AS dim,
+                qe.vec       AS vec,
+                'file'       AS src,
+                qp.created_at
+            FROM qa_pairs qp
+            JOIN qa_embeddings qe
+              ON qe.qa_id = qp.id AND qe.model = :model
+            WHERE qp.file_hash = :fh
+            ORDER BY qp.created_at DESC
+            LIMIT :limit
+            """
+        )
+        params = {"fh": file_hash, "model": model, "limit": int(limit)}
+
+    with eng.connect() as conn:
+        rows = conn.execute(sql, params).mappings().all()
+
+    return [
+        {
+            "qa_id": int(r["qa_id"]),
+            "question_norm": r["question_norm"] or "",
+            "dim": int(r["dim"]) if r.get("dim") is not None else None,
+            "vec": r["vec"],
+            "src": r["src"],
+        }
+        for r in rows
+    ]

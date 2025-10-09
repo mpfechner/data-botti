@@ -4,7 +4,6 @@ import numpy as np
 import unicodedata
 import re
 # Optional cross-encoder for semantic re-ranking (multilingual)
-import difflib
 import logging
 # Optional cross-encoder for semantic re-ranking (multilingual)
 try:
@@ -20,24 +19,62 @@ logger = logging.getLogger(__name__)
 def _get_cross_encoder():
     """
     Lazy-load a multilingual cross-encoder for better ranking of short QA prompts.
-    Falls back to no-op if package/model unavailable.
+    Tries a list of well-performing multilingual CE models. If HF is offline but
+    the repo is cached locally, loading via repo-id still works.
     """
+    import os
     global _ce_model
     if not _CE_AVAILABLE:
         return None
     if _ce_model is not None:
         return _ce_model
-    try:
-        # Multilingual STS-tuned model; good for German & English similarity
-        logger.info("[rerank] loading CrossEncoder 'cross-encoder/stsb-xlm-r-multilingual'")
-        _ce_model = CrossEncoder("cross-encoder/stsb-xlm-r-multilingual")
-        logger.info("[rerank] CrossEncoder loaded")
-        return _ce_model
-    except Exception:
-        return None
+
+    HF_OFFLINE = os.getenv("HF_HUB_OFFLINE", "0") == "1"
+    mode = "OFFLINE (cache only)" if HF_OFFLINE else "ONLINE (may contact HF Hub)"
+    logger.info("[rerank] CrossEncoder load mode: %s", mode)
+
+    # Preferred → fallback list
+    candidates = [
+        "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",     # multilingual mMiniLMv2 (small, fast)
+    ]
+
+    for repo_id in candidates:
+        try:
+            if HF_OFFLINE:
+                # Strictly offline: only load from local HF cache
+                logger.info("[rerank] loading CrossEncoder %r with local_files_only=True", repo_id)
+                _ce_model = CrossEncoder(
+                    repo_id,
+                    local_files_only=True,           # pass only here (do not duplicate in kwargs)
+                    trust_remote_code=False,
+                    model_kwargs={},                 # replacement for deprecated automodel_args
+                    tokenizer_kwargs={}              # replacement for deprecated tokenizer_args
+                )
+            else:
+                # Online allowed: will download on first run, then use cache
+                logger.info("[rerank] loading CrossEncoder %r (online allowed)", repo_id)
+                _ce_model = CrossEncoder(
+                    repo_id,
+                    trust_remote_code=False,
+                    model_kwargs={},
+                    tokenizer_kwargs={}
+                )
+            logger.info("[rerank] CrossEncoder ready: %s", repo_id)
+            return _ce_model
+        except OSError as e:
+            # Typical when offline and model not in cache
+            logger.warning("[rerank] OSError loading %s: %s", repo_id, e)
+            continue
+        except Exception as e:
+            logger.warning("[rerank] failed to load %s: %s", repo_id, e)
+            continue
+
+    logger.warning("[rerank] no CrossEncoder available; continuing without CE")
+    return None
 from services.embeddings import embed_query
 from services.models import QARecord, QueryRequest
-from repo import repo_qa_find_by_hash, repo_qa_semantic_candidates, get_engine
+from types import SimpleNamespace
+from repo import repo_qa_find_by_hash, repo_embedding_candidates_for_file, get_engine
 from sqlalchemy import text
 
 SEMANTIC_THRESHOLD = 0.90
@@ -124,6 +161,41 @@ def _sig_tokens(text: str) -> set[str]:
     return {t for t in toks if len(t) >= 4 and t not in STOPWORDS}
 
 
+# --- Levenshtein similarity for typo-tolerant matching ---
+def _lev_ratio(a: str, b: str) -> float:
+    """
+    Normalized Levenshtein similarity in [0,1].
+    1.0 = identical, 0.0 = completely different.
+    Uses a standard dynamic-programming edit distance and normalizes by max length.
+    Suitable for short UI queries.
+    """
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    la, lb = len(a), len(b)
+    # ensure a is the shorter for a tiny speed boost
+    if la > lb:
+        a, b = b, a
+        la, lb = lb, la
+    # initialize previous row
+    prev = list(range(la + 1))
+    for j in range(1, lb + 1):
+        curr = [j] + [0] * la
+        bj = b[j - 1]
+        for i in range(1, la + 1):
+            cost = 0 if a[i - 1] == bj else 1
+            curr[i] = min(
+                prev[i] + 1,       # deletion
+                curr[i - 1] + 1,   # insertion
+                prev[i - 1] + cost # substitution
+            )
+        prev = curr
+    dist = prev[la]
+    denom = max(la, lb)
+    return 1.0 - (dist / denom if denom else 0.0)
+
+
 # --- Aggressive Normalisierung für Near-Exact-Matching ---
 def _normalize_text(s: str) -> str:
     """
@@ -166,8 +238,8 @@ class SearchService:
         }
 
     @staticmethod
-    def suggest_similar_questions(prompt: str, dataset_id: int, user_id: int, top_k: int = 8) -> dict:
-        logger.info("[suggest] q=%r ds=%s top_k=%s", prompt, dataset_id, top_k)
+    def suggest_similar_questions(prompt: str, dataset_id: int, user_id: int, top_k: int = 8, include_seeds: bool = True) -> dict:
+        logger.info("[suggest] q=%r ds=%s top_k=%s include_seeds=%s", prompt, dataset_id, top_k, include_seeds)
         # Schritt 1: Berechtigung prüfen
         engine = get_engine()
         with engine.begin() as conn:
@@ -227,8 +299,13 @@ class SearchService:
         embedding = embed_query(f"query: {prompt}")
         if not getattr(request, "file_hash", None):
             return {"found": False, "decision": "semantic", "records": []}
-        candidates = repo_qa_semantic_candidates(file_hash=request.file_hash, model="intfloat/multilingual-e5-base")
-        logger.info("[suggest] embedding candidates=%d for file_hash=%s", len(candidates) if candidates else 0, request.file_hash)
+        candidates = repo_embedding_candidates_for_file(
+            file_hash=request.file_hash,
+            model="intfloat/multilingual-e5-base",
+            include_seeds=include_seeds,
+            limit=200
+        )
+        logger.info("[suggest] embedding candidates=%d for file_hash=%s include_seeds=%s", len(candidates) if candidates else 0, request.file_hash, include_seeds)
         # --- Score candidates via cosine similarity and apply a soft threshold for suggestions ---
         query_vec = np.asarray(embedding, dtype=np.float32)
         if query_vec.size == 0:
@@ -279,19 +356,36 @@ class SearchService:
         lexical_hits: list[tuple[object, float, int]] = []  # (rec, score, overlap_size)
         for item in (candidates or []):
             try:
-                rec, dim, vec_bytes = item  # expected shape from repo
-            except Exception:
-                rec, dim, vec_bytes = (item, None, None)
-            try:
-                cand_vec = np.frombuffer(vec_bytes, dtype=np.float32) if vec_bytes is not None else None
-                if cand_vec is None or cand_vec.size == 0:
+                # Accept dict-shaped candidates from repo_embedding_candidates_for_file
+                rec = None
+                vec_bytes = None
+                if isinstance(item, dict):
+                    rid = item.get("id") or item.get("qa_id")
+                    qtext = item.get("question") or item.get("question_norm") or ""
+                    vec_bytes = item.get("vec") or item.get("embedding") or item.get("vector")
+                    rec = SimpleNamespace(id=rid, question=qtext, answer=None)
+                    if rid is None:
+                        logger.warning("[suggest] candidate with missing id/qa_id: %r", item)
+                else:
+                    # Backward compatibility with tuple payloads: (rec, dim, vec_bytes)
+                    try:
+                        rec, _dim, vec_bytes = item
+                    except Exception:
+                        # Last resort: treat item as record-like and try vec attributes
+                        rec = item
+                        vec_bytes = getattr(item, "vec", None) or getattr(item, "embedding", None)
+
+                if vec_bytes is None:
                     continue
+                cand_vec = np.frombuffer(vec_bytes, dtype=np.float32)
+                if cand_vec.size == 0:
+                    continue
+
                 denom = (np.linalg.norm(query_vec) * np.linalg.norm(cand_vec))
                 if denom == 0:
                     continue
-                score = float(np.dot(query_vec, cand_vec) / denom)
 
-                # Pure cosine score, no keyword heuristics
+                score = float(np.dot(query_vec, cand_vec) / denom)
                 adjusted = max(0.0, min(0.9999, score))
                 scored.append((rec, adjusted))
 
@@ -303,6 +397,16 @@ class SearchService:
             except Exception:
                 continue
         logger.info("[suggest] cosine_scored=%d", len(scored))
+
+        # Log top-5 cosine before filters
+        try:
+            top5_cos = sorted(scored, key=lambda rs: rs[1], reverse=True)[:5]
+            logger.info("[suggest] cosine_top5=%s", [(
+                getattr(r, "id", None) or getattr(r, "qa_id", None) or getattr(r, "question", None)[:24],
+                round(float(s), 4)
+            ) for r, s in top5_cos])
+        except Exception:
+            pass
 
         if not scored:
             # No embedding candidates available → try DB lexical fallback
@@ -374,6 +478,7 @@ class SearchService:
         logger.info("[suggest] deduped=%d", len(deduped))
 
         # ----- Cross-encoder re-ranking (semantic pairwise scoring) -----
+        ce_used = False
         try:
             ce = _get_cross_encoder()
             if ce is not None and deduped:
@@ -397,6 +502,12 @@ class SearchService:
 
                 # Predict similarity scores with CE (higher is better)
                 ce_scores = ce.predict(pairs)
+                # Debug: log CE raw scores (top-5)
+                try:
+                    preview = list(zip(ce_keys, [float(x) for x in ce_scores]))[:5]
+                    logger.info("[rerank] ce_raw_top5=%s", preview)
+                except Exception:
+                    pass
                 # Normalize CE scores to [0,1] for blending
                 import math
                 ce_min = float(np.min(ce_scores)) if len(ce_scores) else 0.0
@@ -421,12 +532,52 @@ class SearchService:
                     else:
                         final_s = BLEND_CE * float(ce_s) + BLEND_COS * float(cos_s)
                     blended.append((rec, final_s))
+                ce_used = True
                 logger.info("[rerank] blended=%d", len(blended))
+                # Log top-5 after blending (by score)
+                try:
+                    top5_blend = sorted(blended, key=lambda rs: rs[1], reverse=True)[:5]
+                    logger.info("[rerank] blended_top5=%s", [(getattr(r, "id", None), round(float(s), 4)) for r, s in top5_blend])
+                except Exception:
+                    pass
                 # Replace deduped with blended scores (keep ordering flexible for next boosts)
                 deduped = blended
         except Exception:
             # If anything goes wrong with CE, keep cosine-only path
             pass
+
+        # ----- Hard-cut on final similarity score (cosine-only or CE-blended) -----
+        try:
+            import os
+            before_hard = len(deduped)
+            if before_hard:
+                if ce_used:
+                    # More permissive when CE was applied; allow small lists through
+                    hard_min = float(os.getenv("SEARCH_HARD_MIN_CE", "0.25"))
+                    if before_hard <= 3:
+                        logger.info("[suggest] hard_cut skipped (ce_used=True, small list=%d)", before_hard)
+                        pass
+                    else:
+                        deduped_after = [(r, s) for (r, s) in deduped if float(s) >= hard_min]
+                        logger.info("[suggest] hard_cut(CE) filtered=%d (>= %.3f) kept=%d", before_hard - len(deduped_after), hard_min, len(deduped_after))
+                        if deduped_after:
+                            deduped = deduped_after
+                else:
+                    # Cosine-only path: use the stricter threshold
+                    hard_min = float(os.getenv("SEARCH_HARD_MIN", "0.58"))
+                    deduped_after = [(r, s) for (r, s) in deduped if float(s) >= hard_min]
+                    logger.info("[suggest] hard_cut filtered=%d (>= %.3f) kept=%d", before_hard - len(deduped_after), hard_min, len(deduped_after))
+                    if deduped_after:
+                        deduped = deduped_after
+                    else:
+                        # If everything got cut, keep a best-effort single candidate if close
+                        best_rec, best_s = max(deduped, key=lambda rs: rs[1])
+                        if float(best_s) >= (hard_min - 0.03):
+                            deduped = [(best_rec, best_s)]
+                        else:
+                            deduped = []
+        except Exception as e:
+            logger.warning("[suggest] hard_cut skipped due to error: %s", e)
 
         # ----- Deterministic re-ranking: boost near-exact matches of the typed text -----
         try:
@@ -456,10 +607,13 @@ class SearchService:
                         jacc = len(qtoks & rtoks) / max(1, len(qtoks | rtoks))
                         if jacc >= 0.75:
                             boost += 0.5
-                    # high character similarity (typos)
-                    sim = difflib.SequenceMatcher(None, rq_norm, q_norm).ratio()
-                    if sim >= 0.95:
-                        boost += 0.4
+                    # high character similarity (typos) using Levenshtein similarity
+                    lev = _lev_ratio(rq_norm, q_norm)
+                    # Stronger boost for near-identical strings (better than difflib for typo handling)
+                    if lev >= 0.95:
+                        boost += 0.5
+                    elif lev >= 0.90:
+                        boost += 0.3
 
                 boosted.append((rec, float(s) + boost, hardpin, abs(len(rq_norm) - len(q_norm)), getattr(rec, "id", 0)))
 
@@ -469,7 +623,11 @@ class SearchService:
         except Exception:
             deduped.sort(key=lambda rs: rs[1], reverse=True)
             top_pairs = deduped[:top_k]
-
+        # Final top-k with scores for traceability
+        try:
+            logger.info("[suggest] final_top=%s", [(getattr(rec, "id", None), round(float(sc), 4)) for rec, sc in top_pairs])
+        except Exception:
+            pass
         logger.info("[suggest] top_pairs_ids=%s", [getattr(rec, "id", None) for rec, _ in top_pairs])
         cleaned = []
         for rec, s in top_pairs:
@@ -499,17 +657,51 @@ class SearchService:
         if not request.file_hash:
             raise ValueError("QueryRequest.file_hash is required for semantic search")
         query_vec = np.asarray(embed_query(f"query: {request.question_norm}"), dtype=np.float32)
-        candidates = repo_qa_semantic_candidates(file_hash=request.file_hash, model="intfloat/multilingual-e5-base")
+        candidates = repo_embedding_candidates_for_file(
+            file_hash=request.file_hash,
+            model="intfloat/multilingual-e5-base",
+            include_seeds=True,
+            limit=200
+        )
         best_score = -1.0
         best_rec = None
-        for rec, _dim, vec_bytes in candidates:
-            candidate_vec = np.frombuffer(vec_bytes, dtype=np.float32)
-            if candidate_vec.size == 0:
+        for item in (candidates or []):
+            try:
+                rec = None
+                vec_bytes = None
+                if isinstance(item, dict):
+                    # dict payload from repo_embedding_candidates_for_file
+                    rid = item.get("id") or item.get("qa_id")
+                    qtext = item.get("question") or item.get("question_norm") or ""
+                    vec_bytes = item.get("vec") or item.get("embedding") or item.get("vector")
+                    from types import SimpleNamespace
+                    rec = SimpleNamespace(id=rid, question=qtext, answer=None)
+                    if rid is None:
+                        logger.warning("[search_semantic] candidate with missing id/qa_id: %r", item)
+                else:
+                    # tuple payload: (rec, dim, vec_bytes)
+                    try:
+                        rec, _dim, vec_bytes = item
+                    except Exception:
+                        rec = item
+                        vec_bytes = getattr(item, "vec", None) or getattr(item, "embedding", None)
+
+                if vec_bytes is None:
+                    continue
+                candidate_vec = np.frombuffer(vec_bytes, dtype=np.float32)
+                if candidate_vec.size == 0:
+                    continue
+
+                denom = (np.linalg.norm(query_vec) * np.linalg.norm(candidate_vec))
+                if denom == 0:
+                    continue
+                sim = float(np.dot(query_vec, candidate_vec) / denom)
+
+                if sim > best_score:
+                    best_score = sim
+                    best_rec = rec
+            except Exception:
                 continue
-            sim = np.dot(query_vec, candidate_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(candidate_vec))
-            if sim > best_score:
-                best_score = sim
-                best_rec = rec
         if best_score >= SEMANTIC_THRESHOLD and best_rec is not None:
             request.decision = "semantic"
             if hasattr(request, "badges") and isinstance(request.badges, list):
