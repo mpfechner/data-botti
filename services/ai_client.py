@@ -11,6 +11,7 @@ Responsibility:
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional, Dict, Any
 from infra.config import get_config
 
@@ -71,7 +72,25 @@ def call_model(*, model: str, messages: list[dict], max_tokens: int = 800, tempe
             if temperature is not None and temperature != 1.0:
                 params["temperature"] = float(temperature)
 
+        # --- perf: measure model roundtrip time (TTLB) ---
+        _perf_enabled = os.environ.get("AI_TIMING", "1") != "0"
+        _t_start = time.monotonic() if _perf_enabled else None
         resp = client.chat.completions.create(**params)
+        if _perf_enabled and _t_start is not None:
+            _t_end = time.monotonic()
+            _ms = (_t_end - _t_start) * 1000.0
+            try:
+                _rid = getattr(resp, "id", None) or getattr(resp, "response", None)
+            except Exception:
+                _rid = None
+            logger.info(
+                "[perf] openai_ttlb_ms=%.1f model=%s max_tokens=%s temperature=%s rid=%s",
+                _ms,
+                model,
+                params.get("max_completion_tokens") or params.get("max_tokens"),
+                None if str(model).startswith("gpt-5") else (None if (temperature is None or float(temperature) == 1.0) else float(temperature)),
+                _rid,
+            )
 
         usage = TokenUsage()
         try:
@@ -222,7 +241,18 @@ def ask_model(
         {"role": "user", "content": prompt},
     ]
 
+    _perf_enabled = os.environ.get("AI_TIMING", "1") != "0"
+    _t_overall_start = time.monotonic() if _perf_enabled else None
     content, usage = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=temperature)
+    if _perf_enabled and _t_overall_start is not None:
+        _t_overall_end = time.monotonic()
+        logger.info(
+            "[perf] ask_model_total_ms=%.1f routed_model=%s expected_output=%s prompt_chars=%d",
+            (_t_overall_end - _t_overall_start) * 1000.0,
+            model,
+            expected_output,
+            len(prompt or ""),
+        )
 
     if content.startswith("(AI error)") or content.startswith("(AI returned no textual content"):
         # One retry with larger budget and a safer fast model for short tasks
