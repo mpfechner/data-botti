@@ -64,25 +64,6 @@ CREATE TABLE IF NOT EXISTS datasets_groups (
     CONSTRAINT fk_datasets_groups_group FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS prompts (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    dataset_id INT,
-    user_id INT,
-    prompt_text TEXT,
-    response_text TEXT,
-    timestamp DATETIME NOT NULL,
-    FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS reports (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    dataset_id INT,
-    summary TEXT,
-    generated_on DATETIME NOT NULL,
-    FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- 1) Archiv-Metadaten zum Originalfile (Bytes bleiben auf Disk/Objektstore)
 CREATE TABLE IF NOT EXISTS dataset_files (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -144,20 +125,4 @@ CREATE TABLE IF NOT EXISTS qa_embeddings (
   PRIMARY KEY (qa_id, model),
   CONSTRAINT fk_qaemb_qa FOREIGN KEY (qa_id)
     REFERENCES qa_pairs(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- Token-Usage (LLM Telemetrie)
--- ============================================================
-CREATE TABLE IF NOT EXISTS token_usage (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  ts TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  user_id INT NULL,
-  model VARCHAR(80) NOT NULL,
-  operation VARCHAR(40) NOT NULL,                -- z. B. 'qa.answer'
-  prompt_tokens INT NOT NULL DEFAULT 0,
-  completion_tokens INT NOT NULL DEFAULT 0,
-  total_tokens INT NOT NULL DEFAULT 0,
-  meta JSON NULL,
-  KEY idx_tokenusage_ts (ts DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
