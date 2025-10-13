@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}AI Result – DataBotti{% endblock %}
+{% block title %}KI-Ergebnis – DataBotti{% endblock %}
 
 {% block content %}
-<h1>AI Result für {{ filename }}</h1>
+<h1>KI-Ergebnis für {{ filename }}</h1>
 
-<h3>Deine Anfrage:</h3>
+<h3>Deine Eingabe:</h3>
 <div style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;border-radius:6px;margin-bottom:16px;min-height:2em;">
   {{ prompt }}
 </div>
 
-<h3>Antwort:</h3>
+<h3>Antwort der KI:</h3>
 <div style="white-space:pre-wrap;border:1px solid #ddd;padding:12px;border-radius:6px;background:#fafafa;min-height:2em;">
   {{ result }}
 </div>

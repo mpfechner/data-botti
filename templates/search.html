@@ -16,6 +16,7 @@
   .suggest-list { list-style: none; margin: 6px 0 0 0; padding: 0; border: 1px solid #cfe7ff; border-radius: 6px; background: #fff; max-height: 220px; overflow-y: auto; }
   .suggest-item { padding: 8px 10px; cursor: pointer; }
   .suggest-item:hover { background: #f5faff; }
+  .suggest-item.active { background: #eef4ff; }
   .suggest-empty { color:#777; font-size:0.9rem; margin-top:4px; }
   .suggest-empty.loading { display:flex; align-items:center; gap:8px; }
   .suggest-empty.loading::before {
@@ -34,9 +35,9 @@
   {{ csrf_field() }}
   <div class="card">
     <div class="row">
-      <label for="dataset_select">Dataset</label>
+      <label for="dataset_select">Datensatz</label>
       <select id="dataset_select" name="dataset_id" required>
-        <option value="">Bitte Dataset auswählen…</option>
+        <option value="">Bitte Datensatz auswählen…</option>
         {% for ds in datasets %}
           <option value="{{ ds.id }}" data-file-hash="{{ ds.file_hash or '' }}" {% if selected_dataset_id and ds.id == selected_dataset_id %}selected{% endif %}>
             {{ ds.name or ('Dataset #' ~ ds.id) }}
@@ -52,11 +53,11 @@
 
     <!-- Typeahead suggestions (will be populated via JS) -->
     <div class="suggest" id="suggest" aria-live="polite" aria-label="Vorschläge" style="display:none;">
-      <ul class="suggest-list" id="suggest-list"></ul>
+      <ul class="suggest-list" id="suggest-list" role="listbox"></ul>
     </div>
 
     <div class="row">
-      <label for="file_hash">Scope-Hash (optional)</label>
+      <label for="file_hash">Datei-Hash (optional)</label>
       <input id="file_hash" name="file_hash" type="text" placeholder="eigener Datei-Hash; leer = Standard-Hash des gewählten Datasets" />
     </div>
 
@@ -118,6 +119,7 @@
   const promptBox = document.getElementById('prompt');
   const sugWrap = document.getElementById('suggest');
   const sugList = document.getElementById('suggest-list');
+  let activeIndex = -1;
   const suggestEndpoint = "{{ url_for('api_v1.api_search_only') }}"; // corrected path to API search endpoint
   let sugAbort = null;
 
@@ -128,7 +130,7 @@
     if (!fileHashInput.value && defaultHash) {
       // Hinweis: wir füllen NICHT automatisch, lassen aber die Info im title
       fileHashInput.placeholder = `leer = Standard-Hash (${defaultHash})`;
-      fileHashInput.title = `Standard-Hash des Datasets: ${defaultHash}`;
+      fileHashInput.title = `Standard-Hash des Datensatzes: ${defaultHash}`;
     } else {
       fileHashInput.placeholder = 'eigener Datei-Hash; leer = Standard-Hash des gewählten Datasets';
       fileHashInput.title = '';
@@ -151,6 +153,7 @@
 
   // --- Typeahead suggestions for previous questions (this dataset only) ---
   function clearSuggestions() {
+    activeIndex = -1;
     if (sugAbort) { try { sugAbort.abort(); } catch(e){}; sugAbort = null; }
     if (sugList) sugList.innerHTML = "";
     if (sugWrap) sugWrap.style.display = "none";
@@ -158,6 +161,7 @@
 
   function renderSuggestions(items) {
     if (!sugList || !sugWrap) return;
+    activeIndex = -1;
     sugList.innerHTML = "";
     if (!items || items.length === 0) {
       const li = document.createElement('li');
@@ -170,6 +174,9 @@
     items.forEach(txt => {
       const li = document.createElement('li');
       li.className = 'suggest-item';
+      li.setAttribute('role', 'option');
+      li.id = `sug-item-${sugList.childElementCount}`;
+      li.setAttribute('aria-selected', 'false');
       li.textContent = txt;
       li.addEventListener('click', () => {
         promptBox.value = txt;
@@ -178,8 +185,74 @@
       });
       sugList.appendChild(li);
     });
+    const itemsEls = sugList.querySelectorAll('.suggest-item');
+    if (itemsEls.length > 0) {
+      activeIndex = -1; // no selection by default
+    }
     sugWrap.style.display = "block";
   }
+
+  function getSuggestItems() {
+    return Array.from(sugList ? sugList.querySelectorAll('.suggest-item') : []);
+  }
+  function updateActive(newIndex) {
+    const items = getSuggestItems();
+    items.forEach((el, idx) => {
+      const isActive = idx === newIndex;
+      el.classList.toggle('active', isActive);
+      el.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    activeIndex = newIndex;
+    if (activeIndex >= 0) {
+      const activeEl = items[activeIndex];
+      activeEl && activeEl.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  if (promptBox) {
+    promptBox.addEventListener('keydown', (ev) => {
+      const items = getSuggestItems();
+      if (!items.length || sugWrap.style.display === 'none') return;
+      if (ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        const next = Math.min(items.length - 1, activeIndex + 1);
+        updateActive(next);
+      } else if (ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        const next = Math.max(-1, activeIndex - 1);
+        if (next === -1) {
+          updateActive(-1);
+        } else {
+          updateActive(next);
+        }
+      } else if (ev.key === 'Enter' && activeIndex >= 0) {
+        ev.preventDefault();
+        const chosen = items[activeIndex];
+        if (chosen) {
+          promptBox.value = chosen.textContent || '';
+          clearSuggestions();
+        }
+      } else if (ev.key === 'Escape') {
+        clearSuggestions();
+      }
+    });
+    // Trigger suggestions when the last typed character is whitespace or a sentence end (. ? !)
+    promptBox.addEventListener('keyup', () => {
+      const v = promptBox.value;
+      if (!v || v.length < 1) { return; }
+      const lastChar = v[v.length - 1];
+      if (/[\s.?!]/.test(lastChar)) {
+          const ds = sel.value;
+          const q = v.trim();
+          fetchSuggestions(q, ds);
+      }
+    });
+    promptBox.addEventListener('blur', () => setTimeout(clearSuggestions, 200)); // allow click
+    // Keep focus behavior simple: do not auto-fetch on focus
+  }
+
+  // When dataset changes, clear suggestions
+  sel.addEventListener('change', clearSuggestions);
 
   async function fetchSuggestions(q, datasetId) {
     if (!q || q.length < 2 || !datasetId) { clearSuggestions(); return; }
@@ -239,24 +312,5 @@
       clearSuggestions();
     }
   }
-
-  if (promptBox) {
-    // Trigger suggestions when the last typed character is whitespace or a sentence end (. ? !)
-    promptBox.addEventListener('keyup', () => {
-      const v = promptBox.value;
-      if (!v || v.length < 1) { return; }
-      const lastChar = v[v.length - 1];
-      if (/[\s.?!]/.test(lastChar)) {
-          const ds = sel.value;
-          const q = v.trim();
-          fetchSuggestions(q, ds);
-      }
-    });
-    promptBox.addEventListener('blur', () => setTimeout(clearSuggestions, 200)); // allow click
-    // Keep focus behavior simple: do not auto-fetch on focus
-  }
-
-  // When dataset changes, clear suggestions
-  sel.addEventListener('change', clearSuggestions);
 </script>
 {% endblock %}

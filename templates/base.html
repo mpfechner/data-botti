@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <title>{% block title %}DataBotti{% endblock %}</title>
@@ -19,12 +19,12 @@
           {% if session.get('is_admin') %}
           <a href="{{ url_for('admin.list_users') }}" class="btn">Admin</a>
           {% endif %}
-          <a href="/app" class="btn">Home</a>
-          <a href="{{ url_for('assistant.search_page') }}" class="btn">Search</a>
+          <a href="/app" class="btn">Startseite</a>
+          <a href="{{ url_for('assistant.search_page') }}" class="btn">Suche</a>
           {% if session.get('user_id') %}
           <form action="{{ url_for('auth.logout') }}" method="post">
           {{ csrf_field() }}
-            <button type="submit" class="btn">Logout</button>
+            <button type="submit" class="btn">Abmelden</button>
           </form>
           {% endif %}
         </div>

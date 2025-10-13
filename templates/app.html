@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}DataBotti – CSV Analyzer{% endblock %}
+{% block title %}DataBotti – CSV-Analyse{% endblock %}
 
 {% block content %}
     <div class="main-content">
         <div class="welcome-section">
-            <h1>Welcome to DataBotti</h1>
-            <p>Please upload a CSV file for analysis:</p>
+            <h1>Willkommen bei DataBotti</h1>
+            <p>Bitte lade eine CSV-Datei zur Analyse hoch:</p>
         </div>
 
         <form action="{{ url_for('datasets.upload_dataset') }}" method="post" enctype="multipart/form-data" class="upload-form">
@@ -16,7 +16,7 @@
             </div>
             {% if groups %}
             <div class="group-selection">
-                <p>Select groups to share this dataset with:</p>
+                <p>Wähle Gruppen aus, mit denen du diesen Datensatz teilen möchtest:</p>
                 {% for g in groups %}
                 <label>
                     <input type="checkbox" name="group_ids" value="{{ g.id }}">
@@ -26,11 +26,11 @@
             </div>
             {% else %}
             <div class="group-selection">
-                <p><em>No groups available – dataset will only be visible to you.</em></p>
+                <p><em>Keine Gruppen verfügbar – der Datensatz ist nur für dich sichtbar.</em></p>
             </div>
             {% endif %}
             <div>
-                <button type="submit">Upload and Analyze</button>
+                <button type="submit">Hochladen und analysieren</button>
             </div>
         </form>
     </div>

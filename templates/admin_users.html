@@ -1,19 +1,17 @@
-
-
 {% extends "base.html" %}
-{% block title %}Admin · Users{% endblock %}
+{% block title %}Admin · Benutzer{% endblock %}
 
 {% block content %}
 <div class="container">
 
-  <h1 class="page-title">Admin · Users</h1>
+  <h1 class="page-title">Admin · Benutzer</h1>
   <div class="button-group">
-    <a class="btn btn-primary" href="{{ url_for('admin.list_users') }}">Users</a>
-    <a class="btn btn-secondary" href="{{ url_for('admin.list_groups') }}">Groups</a>
+    <a class="btn btn-primary" href="{{ url_for('admin.list_users') }}">Benutzer</a>
+    <a class="btn btn-secondary" href="{{ url_for('admin.list_groups') }}">Gruppen</a>
   </div>
 
   <section class="card">
-    <h2 class="card-title">Create User</h2>
+    <h2 class="card-title">Benutzer erstellen</h2>
     <form method="post" action="{{ url_for('admin.create_user') }}" class="form form-horizontal">
       {{ csrf_field() }}
       <div class="form-row">
@@ -21,11 +19,11 @@
         <input id="email" name="email" type="email" required>
       </div>
       <div class="form-row">
-        <label for="username">Username</label>
+        <label for="username">Benutzername</label>
         <input id="username" name="username" type="text" placeholder="optional">
       </div>
       <div class="form-row">
-        <label for="password">Password</label>
+        <label for="password">Passwort</label>
         <input id="password" name="password" type="password" required>
       </div>
       <div class="form-row">
@@ -35,22 +33,22 @@
         </label>
       </div>
       <div class="form-actions">
-        <button class="btn btn-primary" type="submit">Create</button>
+        <button class="btn btn-primary" type="submit">Erstellen</button>
       </div>
     </form>
   </section>
 
   <section class="card">
-    <h2 class="card-title">All Users</h2>
+    <h2 class="card-title">Alle Benutzer</h2>
     <div class="table-wrapper">
       <table class="table">
         <thead>
           <tr>
             <th>ID</th>
             <th>E-Mail</th>
-            <th>Username</th>
+            <th>Benutzername</th>
             <th>Admin</th>
-            <th class="col-actions">Actions</th>
+            <th class="col-actions">Aktionen</th>
           </tr>
         </thead>
         <tbody>
@@ -63,18 +61,18 @@
             <td class="actions">
               <form method="post" action="{{ url_for('admin.change_password', user_id=u.id) }}" class="inline-form">
                 {{ csrf_field() }}
-                <input name="password" type="password" placeholder="new password" required>
-                <button class="btn btn-secondary" type="submit">Set Password</button>
+                <input name="password" type="password" placeholder="neues Passwort" required>
+                <button class="btn btn-secondary" type="submit">Passwort setzen</button>
               </form>
               <form method="post" action="{{ url_for('admin.delete_user', user_id=u.id) }}" class="inline-form" onsubmit="return confirm('Diesen Nutzer wirklich löschen?');">
                 {{ csrf_field() }}
-                <button class="btn btn-danger" type="submit">Delete</button>
+                <button class="btn btn-danger" type="submit">Löschen</button>
               </form>
             </td>
           </tr>
           {% else %}
           <tr>
-            <td colspan="5" class="muted">No users found.</td>
+            <td colspan="5" class="muted">Keine Benutzer gefunden.</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -82,15 +80,15 @@
     </div>
 </section>
   <section class="card">
-    <h2 class="card-title">Embeddings Backfill</h2>
+    <h2 class="card-title">Embeddings nachtragen</h2>
     <form method="post" action="{{ url_for('admin.backfill_embeddings') }}" class="form">
       {{ csrf_field() }}
       <div class="form-row">
         <label for="file_hash">File Hash (optional)</label>
-        <input id="file_hash" name="file_hash" type="text" placeholder="leave empty for all files">
+        <input id="file_hash" name="file_hash" type="text" placeholder="leer lassen für alle Dateien">
       </div>
       <div class="form-actions">
-        <button class="btn btn-warning" type="submit">Start Backfill</button>
+        <button class="btn btn-warning" type="submit">Nachtrag starten</button>
       </div>
     </form>
   </section>

@@ -13,12 +13,12 @@
             <img src="{{ url_for('static', filename='Botti_name.png') }}" alt="DataBotti" class="logo-text">
         </div>
     </header>
-    <h1>Willkommen bei DataBotti</h1>
+    <h1>Willkommen bei DataBotti 👋</h1>
     <p>Dein KI-Assistent für die Analyse von CSV-Daten.</p>
     <p>
         <form action="{{ url_for('auth.login') }}" method="get">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn-login">Zum Login</button>
+            <button type="submit" class="btn-login">Anmelden</button>
         </form>
     </p>
     {% if session.get('user_id') %}
