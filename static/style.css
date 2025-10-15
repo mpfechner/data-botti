@@ -524,3 +524,99 @@ a:hover {
           box-shadow: .2em -.2em 0 0 currentcolor;
         }
       }
+
+/* ==========================
+   Admin (users/groups) styling
+   Moved from inline <style> in admin templates
+   ========================== */
+
+:root {
+  --db-teal: #0f9da4;
+  --db-teal-700: #0b7e84;
+  --db-bg: #f7f9fb;
+}
+
+/* Primary button in brand teal (global) */
+.btn-primary {
+  background-color: var(--db-teal);
+  border-color: var(--db-teal);
+  color: #fff;
+}
+.btn-primary:hover {
+  background-color: var(--db-teal-700);
+  border-color: var(--db-teal-700);
+  color: #fff;
+}
+
+/* Switch buttons (Benutzer / Gruppen) */
+.btn-switch .btn { margin-right: .5rem; border-radius: 999px; padding: .375rem 1rem; font-weight: 600; }
+.btn-db { background-color: var(--db-teal); border: 1px solid var(--db-teal); color: #fff; }
+.btn-db:hover { background-color: var(--db-teal-700); border-color: var(--db-teal-700); color: #fff; }
+.btn-db-outline { background-color: transparent; border: 1px solid var(--db-teal); color: var(--db-teal-700); }
+.btn-db-outline:hover { background-color: var(--db-teal); color: #fff; }
+
+.username-cell { text-align: center; }
+.username-text { font-weight: 500; margin-bottom: .25rem; }
+.card .table-responsive { width: 100%; overflow-x: auto; }
+.table { width: 100%; table-layout: fixed; }
+
+/* Cards & headings */
+.card { border: 1px solid #e8eef3; border-radius: 12px; background: #fff; padding: 1rem 1.25rem; margin: 1.25rem 0; overflow: hidden; }
+.card-title { font-size: 1.25rem; font-weight: 600; color: #0c2b33; margin-bottom: 1rem; }
+.muted { color: #7a8a97; }
+
+/* Two-column form for create-user */
+.form-grid { display: grid; grid-template-columns: 240px minmax(320px, 520px); column-gap: 16px; row-gap: 12px; align-items: center; }
+.form-grid .form-label { text-align: left; margin: 0; padding-left: .25rem; }
+.form-grid .form-check { margin: 0; }
+.form-grid .form-actions { grid-column: 1 / -1; margin-top: .75rem; }
+.form-grid .form-control { width: 100%; }
+
+/* Users table polish */
+.table thead th { background: #f1f6f7; font-weight: 600; border-bottom-color: #e1eaee; }
+.table thead th { white-space: nowrap; }
+.table th, .table td { padding: .625rem .75rem; vertical-align: middle; word-break: break-word; }
+.table tbody tr:hover { background: #fafcfd; }
+.table td:nth-child(1), .table th:nth-child(1) { width: 50px; color: #6b7a86; }
+.table td:nth-child(2), .table th:nth-child(2) { width: 200px; }
+.table td:nth-child(3), .table th:nth-child(3) { width: 160px; }
+.table td:nth-child(4), .table th:nth-child(4) { width: 80px; text-align: center; }
+.table td:nth-child(5), .table th:nth-child(5) { width: 220px; min-width: 200px; white-space: normal; }
+
+/* Action cell layout (right column) */
+.action-cell { display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-start; gap: .5rem; }
+.action-cell .inline-form { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin: 0; width: 100%; }
+.action-cell .inline-form input.form-control { width: 12rem; max-width: 100%; }
+
+/* Inline delete icon next to username */
+.name-delete-form { display: flex; justify-content: center; margin-top: .25rem; }
+.name-delete-btn { display: inline-flex; align-items: center; justify-content: center; padding: .125rem .45rem; line-height: 1; font-size: .9rem; border-radius: 999px; }
+
+/* Soft badges for Admin column */
+.badge-pill { display: inline-block; padding: .25rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+
+.badge-soft-success { background: #e6f6f4; color: var(--db-teal-700); border: 1px solid #cfecea; }
+.badge-soft-muted { background: #f2f5f7; color: #6b7a86; border: 1px solid #e2e8ee; }
+
+/* --- Unified form controls (inputs & selects) --- */
+.form-control, .form-select {
+  display: block;
+  width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  line-height: 1.4;
+  min-height: 2.5rem;
+  box-sizing: border-box;
+}
+
+.form-control:focus, .form-select:focus {
+  outline: none;
+  border-color: var(--db-teal);
+  box-shadow: 0 0 0 3px rgba(15,157,164,.15);
+}
+
+/* Compact select for tight table cells if needed */
+.table .form-select { min-height: 2.25rem; padding: .375rem .625rem; }

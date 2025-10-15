@@ -5,35 +5,35 @@
 <div class="container">
   <h1 class="page-title">Admin · Gruppen</h1>
 
-  <div class="button-group">
-    <a class="btn btn-secondary" href="{{ url_for('admin.list_users') }}">Benutzer</a>
-    <a class="btn btn-primary" href="{{ url_for('admin.list_groups') }}">Gruppen</a>
+  <div class="btn-switch mb-3">
+    <a class="btn btn-db-outline" href="{{ url_for('admin.list_users') }}">Benutzer</a>
+    <a class="btn btn-db" href="{{ url_for('admin.list_groups') }}">Gruppen</a>
   </div>
 
   <section class="card">
     <h2 class="card-title">Gruppe erstellen</h2>
-    <form method="post" action="{{ url_for('admin.create_group') }}" class="form form-horizontal">
+    <form method="post" action="{{ url_for('admin.create_group') }}" class="form">
       {{ csrf_field() }}
-      <div class="form-row">
-        <label for="name">Name</label>
-        <input id="name" name="name" type="text" required>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" type="submit">Erstellen</button>
+      <div class="form-grid">
+        <label for="name" class="form-label">Name</label>
+        <input id="name" name="name" type="text" class="form-control" required>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Erstellen</button>
+        </div>
       </div>
     </form>
   </section>
 
   <section class="card">
     <h2 class="card-title">Alle Gruppen</h2>
-    <div class="table-wrapper">
-      <table class="table">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
         <thead>
           <tr>
             <th>ID</th>
             <th>Name</th>
             <th>Mitglieder</th>
-            <th class="col-actions">Aktionen</th>
+            <th class="text-end">Aktionen</th>
           </tr>
         </thead>
         <tbody>
@@ -48,8 +48,8 @@
                   <ul class="list-inline">
                     {% for m in g_members %}
                       <li>
-                        <span class="badge">{{ m.email }}</span>
-                        <form method="post" action="{{ url_for('admin.remove_user_from_group', group_id=g.id) }}" class="inline-form">
+                        <span class="badge">{{ m.username or m.email }}</span>
+                        <form method="post" action="{{ url_for('admin.remove_user_from_group', group_id=g.id) }}">
                           {{ csrf_field() }}
                           <input type="hidden" name="user_id" value="{{ m.id }}">
                           <button class="btn btn-xsmall" type="submit" title="Entfernen">×</button>
@@ -62,21 +62,21 @@
                 {% endif %}
               </div>
 
-              <form method="post" action="{{ url_for('admin.add_user_to_group', group_id=g.id) }}" class="form inline-form add-member-form">
+              <form method="post" action="{{ url_for('admin.add_user_to_group', group_id=g.id) }}" class="form add-member-form">
                 {{ csrf_field() }}
-                <select name="user_id" required>
+                <select name="user_id" class="form-select" required>
                   <option value="" disabled selected>+ Mitglied hinzufügen…</option>
                   {% for u in users %}
                     {% if not g_members or (u.id not in (g_members | map(attribute='id'))) %}
-                      <option value="{{ u.id }}">{{ u.email }}{% if u.username %} ({{ u.username }}){% endif %}</option>
+                      <option value="{{ u.id }}">{{ u.username or u.email }}</option>
                     {% endif %}
                   {% endfor %}
                 </select>
                 <button class="btn btn-secondary" type="submit">Hinzufügen</button>
               </form>
             </td>
-            <td class="actions">
-              <form method="post" action="{{ url_for('admin.delete_group', group_id=g.id) }}" class="inline-form" onsubmit="return confirm('Diese Gruppe wirklich löschen?');">
+            <td class="text-end">
+              <form method="post" action="{{ url_for('admin.delete_group', group_id=g.id) }}" onsubmit="return confirm('Diese Gruppe wirklich löschen?');">
                 {{ csrf_field() }}
                 <button class="btn btn-danger" type="submit">Löschen</button>
               </form>
