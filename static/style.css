@@ -620,3 +620,39 @@ a:hover {
 
 /* Compact select for tight table cells if needed */
 .table .form-select { min-height: 2.25rem; padding: .375rem .625rem; }
+
+/* ==========================
+   Result tables (pandas DataFrame in result.html)
+   ========================== */
+
+/* Make pandas tables readable and prevent column "merging" */
+ table.dataframe {
+  display: block;
+  width: max-content;      /* grow to content width */
+  min-width: 100%;         /* but never smaller than container */
+  border-collapse: collapse;
+  table-layout: auto;      /* let browser size columns by content */
+}
+
+ .df-wrap {
+  width: 100%;
+  overflow-x: auto;        /* horizontal scrollbar per table */
+ }
+
+ table.dataframe th,
+ table.dataframe td {
+  padding: .5rem .75rem;
+  border: 1px solid #ddd;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Ensure header text is horizontal and compact */
+ table.dataframe th { writing-mode: horizontal-tb; }
+
+/* Slightly tighter padding on very small screens */
+@media (max-width: 640px) {
+  table.dataframe th,
+  table.dataframe td { padding: .4rem .6rem; }
+}

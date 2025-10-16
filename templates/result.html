@@ -48,10 +48,14 @@
 </ul>
 
 <h2>Beispieldaten (erste 10 Zeilen)</h2>
-{{ summary.head|safe }}
+<div class="df-wrap">
+  {{ summary.head|safe }}
+</div>
 
 <h2>Beschreibende Statistik</h2>
-{{ summary.description|safe }}
+<div class="df-wrap">
+  {{ summary.description|safe }}
+</div>
 
 {% if summary.insights %}
 <hr>
@@ -81,7 +85,8 @@
 
 {% if summary.insights.numeric %}
 <h3>Numerische Spalten</h3>
-<table class="table table-sm table-striped table-hover">
+<div class="df-wrap">
+<table class="table table-sm table-striped table-hover dataframe">
   <thead>
     <tr>
       <th>Spalte</th><th>Anzahl</th><th>Mittelwert</th><th>Stdabw.</th>
@@ -104,11 +109,13 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% endif %}
 
 {% if summary.insights.categorical %}
 <h3>Kategorische Spalten</h3>
-<table class="table table-sm table-striped table-hover">
+<div class="df-wrap">
+<table class="table table-sm table-striped table-hover dataframe">
   <thead>
     <tr>
       <th>Spalte</th><th>Anzahl</th><th>Einzigartig</th><th>Häufigster Wert</th><th>Häufigkeit</th>
@@ -126,13 +133,15 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% endif %}
 {% endif %}
 
 {% if columns %}
 <hr>
 <h2>Spaltenübersicht</h2>
-<table class="table table-sm table-striped table-hover">
+<div class="df-wrap">
+<table class="table table-sm table-striped table-hover dataframe">
   <thead>
     <tr>
       <th>#</th>
@@ -158,6 +167,7 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endif %}
 
 {% if ai_available %}
