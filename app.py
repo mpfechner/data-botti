@@ -23,6 +23,11 @@ load_dotenv()
 
 app = Flask(__name__)
 csrf = CSRFProtect(app)
+
+# stellt csrf_token in ALLEN Templates bereit (auch ohne base.html)
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf)
 setup_app_logging(app)
 
 # Blueprints an die App „andocken“
