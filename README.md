@@ -75,3 +75,6 @@ Then you can start the backend locally in PyCharm while the database runs in the
 
 ## Release
 - Version 1.12.0 – stable MVP with full AI semantic search, offline caching, and QA seed question management.
+
+## License
+- Licensed under CC BY-NC 4.0
