@@ -103,6 +103,16 @@ document.addEventListener("DOMContentLoaded", function() {
       setTask('segments');
     });
   }
+
+  var aiForm = document.getElementById('ai-form');
+  var loader = aiForm ? aiForm.querySelector('.loader') : null;
+  var askBtn = aiForm ? aiForm.querySelector('button[type="submit"].btn.btn-primary') : null;
+  if (aiForm && loader && askBtn) {
+    aiForm.addEventListener('submit', function() {
+      loader.style.display = 'inline-block';
+      askBtn.disabled = true;
+    });
+  }
 });
 </script>
 
@@ -114,7 +124,7 @@ document.addEventListener("DOMContentLoaded", function() {
 <div style="clear:both;"></div>
 <h1>AI Assistant für {{ filename }}</h1>
 
-<form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="margin-top:12px;">
+<form id="ai-form" method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="margin-top:12px;">
   {{ csrf_field() }}
   <input type="hidden" id="expected_output" name="expected_output" value="medium">
   <input type="hidden" id="task" name="task" value="">
@@ -136,7 +146,8 @@ document.addEventListener("DOMContentLoaded", function() {
     </label>
   </div>
   <div style="margin-top:8px;">
-    <button type="submit" class="btn btn-primary">Ask AI</button>
+      <span class="loader" style="display:none;"></span>
+    <button type="submit" class="btn btn-primary">KI befragen</button>
     <a class="btn" href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}">Zurück</a>
   </div>
 </form>

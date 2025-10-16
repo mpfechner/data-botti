@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; max-width: 880px; background: #fff; }
+  .row { display: flex; gap: 12px; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label { min-width: 150px; font-weight: 600; }
+  select, input[type="text"], textarea { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+  button { padding: 10px 14px; border: 0; border-radius: 6px; cursor: pointer; }
+  .primary { background: #3a6df0; color: #fff; }
+  .hint { color: #555; font-size: 0.9rem; }
+  .chip.active { background:#e8f4ff; }
+
+  /* Typeahead suggestions */
+  .suggest { margin-top: 6px; }
+  .suggest-list { list-style: none; margin: 6px 0 0 0; padding: 0; border: 1px solid #cfe7ff; border-radius: 6px; background: #fff; max-height: 220px; overflow-y: auto; }
+  .suggest-item { padding: 8px 10px; cursor: pointer; }
+  .suggest-item:hover { background: #f5faff; }
+  .suggest-item.active { background: #eef4ff; }
+  .suggest-empty { color:#777; font-size:0.9rem; margin-top:4px; }
+  .suggest-empty.loading { display:flex; align-items:center; gap:8px; }
+  .suggest-empty.loading::before {
+    content:"";
+    width:12px; height:12px;
+    border:2px solid #3a6df0;
+    border-top-color:transparent;
+    border-radius:50%;
+    animation:spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+
+<h2>Frage stellen</h2>
+<form id="ask-form" method="post">
+  {{ csrf_field() }}
+  <div class="card">
+    <div class="row">
+      <label for="dataset_select">Datensatz</label>
+      <select id="dataset_select" name="dataset_id" required>
+        <option value="">Bitte Datensatz auswählen…</option>
+        {% for ds in datasets %}
+          <option value="{{ ds.id }}" data-file-hash="{{ ds.file_hash or '' }}" {% if selected_dataset_id and ds.id == selected_dataset_id %}selected{% endif %}>
+            {{ ds.name or ('Dataset #' ~ ds.id) }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="prompt">Frage</label>
+      <textarea id="prompt" name="prompt" rows="4" placeholder="Frag mich was zu deinem Datensatz…" required></textarea>
+    </div>
+
+    <!-- Typeahead suggestions (will be populated via JS) -->
+    <div class="suggest" id="suggest" aria-live="polite" aria-label="Vorschläge" style="display:none;">
+      <ul class="suggest-list" id="suggest-list" role="listbox"></ul>
+    </div>
+
+    <div class="row">
+      <label for="file_hash">Datei-Hash (optional)</label>
+      <input id="file_hash" name="file_hash" type="text" placeholder="eigener Datei-Hash; leer = Standard-Hash des gewählten Datasets" />
+    </div>
+
+    <div class="row">
+      <span class="hint">Hinweis: Wenn die Frage bereits für das gewählte Dataset existiert, wird die Antwort 💾 aus dem Verlauf wiederverwendet.</span>
+    </div>
+
+    <div class="row" style="justify-content: flex-end;">
+      <button class="btn btn-primary" type="submit">Senden</button>
+    </div>
+  </div>
+
+</form>
+
+<div class="card" style="margin-top:20px;">
+  <h3>Verlauf (letzte Fragen)</h3>
+  <div class="chips" style="margin-top:4px; display:flex; gap:8px; align-items:center;">
+    <span class="hint">Zeitraum:</span>
+    {# default days to 'all' if not provided #}
+    {% set _days = selected_days if selected_days is not none else 'all' %}
+    <a class="chip{% if _days == '7' %} active{% endif %}" href="{{ url_for('assistant.search_page') }}?dataset_id={{ selected_dataset_id }}&days=7" style="padding:4px 10px; border-radius:14px; border:1px solid #cfe7ff; background:#fff; text-decoration:none;">7 Tage</a>
+    <a class="chip{% if _days == '30' %} active{% endif %}" href="{{ url_for('assistant.search_page') }}?dataset_id={{ selected_dataset_id }}&days=30" style="padding:4px 10px; border-radius:14px; border:1px solid #cfe7ff; background:#fff; text-decoration:none;">30 Tage</a>
+    <a class="chip{% if _days == 'all' %} active{% endif %}" href="{{ url_for('assistant.search_page') }}?dataset_id={{ selected_dataset_id }}" style="padding:4px 10px; border-radius:14px; border:1px solid #cfe7ff; background:#fff; text-decoration:none;">Alle</a>
+  </div>
+  {% if history and history|length > 0 %}
+    <ul>
+      {% for item in history %}
+        <li style="display:flex; gap:8px; align-items:center; justify-content:space-between;">
+          <div>
+            <strong title="{{ item.question_original }}">{{ item.question_original }}</strong>
+            <span style="color:#555; font-size:0.9rem; margin-left:6px;">
+              {{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at.__class__.__name__ != 'str' else item.created_at }}
+            </span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            {% if item.decision %}
+              {% if item.decision == 'exact' %}
+                <span class="chip" style="background:#e8f4ff;border:1px solid #cfe7ff;">💾 aus Verlauf</span>
+              {% elif item.decision == 'analysis' %}
+                <span class="chip" style="background:#e8fff0;border:1px solid #c7f0d8;">📊 Analyse</span>
+              {% elif item.decision in ['llm', 'semantic_or_llm'] %}
+                <span class="chip" style="background:#f6f0ff;border:1px solid #e5d9ff;">✨ neu generiert</span>
+              {% endif %}
+            {% endif %}
+            <a class="btn btn-link" href="{{ url_for('assistant.show_qa', qa_id=item.id) }}" title="Antwort anzeigen">Antwort anzeigen</a>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="hint">Noch keine Fragen für dieses Dataset gestellt.</p>
+  {% endif %}
+</div>
+
+<script>
+  const form = document.getElementById('ask-form');
+  const sel = document.getElementById('dataset_select');
+  const fileHashInput = document.getElementById('file_hash');
+  const promptBox = document.getElementById('prompt');
+  const sugWrap = document.getElementById('suggest');
+  const sugList = document.getElementById('suggest-list');
+  let activeIndex = -1;
+  const suggestEndpoint = "{{ url_for('api_v1.api_search_only') }}"; // corrected path to API search endpoint
+  let sugAbort = null;
+
+  // Wenn kein eigener Scope-Hash eingegeben wird, kann (optional) der Standard-Hash des Datasets verwendet werden
+  sel.addEventListener('change', () => {
+    const opt = sel.options[sel.selectedIndex];
+    const defaultHash = opt ? opt.getAttribute('data-file-hash') : '';
+    if (!fileHashInput.value && defaultHash) {
+      // Hinweis: wir füllen NICHT automatisch, lassen aber die Info im title
+      fileHashInput.placeholder = `leer = Standard-Hash (${defaultHash})`;
+      fileHashInput.title = `Standard-Hash des Datensatzes: ${defaultHash}`;
+    } else {
+      fileHashInput.placeholder = 'eigener Datei-Hash; leer = Standard-Hash des gewählten Datasets';
+      fileHashInput.title = '';
+    }
+    // Reload /search with ?dataset_id=<id> to populate history for the chosen dataset
+    const selectedId = sel.value;
+    if (selectedId) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('dataset_id', selectedId);
+      window.location.href = url.toString();
+    }
+  });
+
+  form.addEventListener('submit', function (e) {
+    const ds = sel.value.trim();
+    if (!ds) { e.preventDefault(); alert('Bitte ein Dataset auswählen.'); return; }
+    // Zielroute dynamisch auf /ai/<dataset_id>
+    form.action = `/ai/${encodeURIComponent(ds)}`;
+  });
+
+  // --- Typeahead suggestions for previous questions (this dataset only) ---
+  function clearSuggestions() {
+    activeIndex = -1;
+    if (sugAbort) { try { sugAbort.abort(); } catch(e){}; sugAbort = null; }
+    if (sugList) sugList.innerHTML = "";
+    if (sugWrap) sugWrap.style.display = "none";
+  }
+
+  function renderSuggestions(items) {
+    if (!sugList || !sugWrap) return;
+    activeIndex = -1;
+    sugList.innerHTML = "";
+    if (!items || items.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'suggest-item';
+      li.innerHTML = '<span class="suggest-empty">Keine Vorschläge</span>';
+      sugList.appendChild(li);
+      sugWrap.style.display = "block";
+      return;
+    }
+    items.forEach(txt => {
+      const li = document.createElement('li');
+      li.className = 'suggest-item';
+      li.setAttribute('role', 'option');
+      li.id = `sug-item-${sugList.childElementCount}`;
+      li.setAttribute('aria-selected', 'false');
+      li.textContent = txt;
+      li.addEventListener('click', () => {
+        promptBox.value = txt;
+        clearSuggestions();
+        promptBox.focus();
+      });
+      sugList.appendChild(li);
+    });
+    const itemsEls = sugList.querySelectorAll('.suggest-item');
+    if (itemsEls.length > 0) {
+      activeIndex = -1; // no selection by default
+    }
+    sugWrap.style.display = "block";
+  }
+
+  function getSuggestItems() {
+    return Array.from(sugList ? sugList.querySelectorAll('.suggest-item') : []);
+  }
+  function updateActive(newIndex) {
+    const items = getSuggestItems();
+    items.forEach((el, idx) => {
+      const isActive = idx === newIndex;
+      el.classList.toggle('active', isActive);
+      el.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    activeIndex = newIndex;
+    if (activeIndex >= 0) {
+      const activeEl = items[activeIndex];
+      activeEl && activeEl.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  if (promptBox) {
+    promptBox.addEventListener('keydown', (ev) => {
+      const items = getSuggestItems();
+      if (!items.length || sugWrap.style.display === 'none') return;
+      if (ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        const next = Math.min(items.length - 1, activeIndex + 1);
+        updateActive(next);
+      } else if (ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        const next = Math.max(-1, activeIndex - 1);
+        if (next === -1) {
+          updateActive(-1);
+        } else {
+          updateActive(next);
+        }
+      } else if (ev.key === 'Enter' && activeIndex >= 0) {
+        ev.preventDefault();
+        const chosen = items[activeIndex];
+        if (chosen) {
+          promptBox.value = chosen.textContent || '';
+          clearSuggestions();
+        }
+      } else if (ev.key === 'Escape') {
+        clearSuggestions();
+      }
+    });
+    // Trigger suggestions when the last typed character is whitespace or a sentence end (. ? !)
+    promptBox.addEventListener('keyup', () => {
+      const v = promptBox.value;
+      if (!v || v.length < 1) { return; }
+      const lastChar = v[v.length - 1];
+      if (/[\s.?!]/.test(lastChar)) {
+          const ds = sel.value;
+          const q = v.trim();
+          fetchSuggestions(q, ds);
+      }
+    });
+    promptBox.addEventListener('blur', () => setTimeout(clearSuggestions, 200)); // allow click
+    // Keep focus behavior simple: do not auto-fetch on focus
+  }
+
+  // When dataset changes, clear suggestions
+  sel.addEventListener('change', clearSuggestions);
+
+  async function fetchSuggestions(q, datasetId) {
+    if (!q || q.length < 2 || !datasetId) { clearSuggestions(); return; }
+    // show loading state
+    clearSuggestions();
+    if (sugList && sugWrap) {
+      sugList.innerHTML = '<li class="suggest-item"><span class="suggest-empty loading">Lade Vorschläge…</span></li>';
+      sugWrap.style.display = "block";
+    }
+    try {
+      if (sugAbort) { sugAbort.abort(); }
+      sugAbort = new AbortController();
+
+      const includeSeeds = false; // Never show seed QAs in typeahead
+      const fhVal = (fileHashInput && fileHashInput.value && fileHashInput.value.trim()) ? fileHashInput.value.trim() : null;
+
+      const payload = {
+        q,
+        dataset_id: datasetId,
+        top_k: 8,
+        include_seeds: includeSeeds
+      };
+      if (fhVal) {
+        payload.file_hash = fhVal;
+      }
+
+      const url = new URL(suggestEndpoint, window.location.origin);
+      const resp = await fetch(url.toString(), {
+        method: 'POST',
+        signal: sugAbort.signal,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) {
+        console.warn('suggestions: HTTP', resp.status);
+        clearSuggestions();
+        return;
+      }
+      const data = await resp.json().catch(() => ({}));
+      // Backend format: { ok:true, found:bool, decision:"semantic"|"exact", records:[{question, answer, ...}] }
+      let items = [];
+      if (data && data.ok && Array.isArray(data.records)) {
+        items = data.records
+          .map(r => (r && (r.question || r.answer || '')).toString())
+          .filter(Boolean);
+      } else if (Array.isArray(data.suggestions)) {
+        items = data.suggestions;
+      } else if (Array.isArray(data)) {
+        items = data;
+      }
+      renderSuggestions(items.slice(0, 8));
+    } catch (e) {
+      // Ignore errors (network/abort), just hide list
+      clearSuggestions();
+    }
+  }
+</script>
+{% endblock %}

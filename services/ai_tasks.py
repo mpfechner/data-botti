@@ -81,7 +81,14 @@ def build_system_prompt() -> str:
 
 def select_relevant_columns(df, model_response: str, task: str, rows: int, cols: int, column_summaries: list[str]) -> list[str]:
     """Parse model response for relevant columns and adjust based on task-specific rules."""
-    txt = (model_response or "").strip()
+    # Normalize model output: accept string or (text, usage) tuple; fall back to empty string
+    mr = model_response
+    if isinstance(mr, tuple):
+        mr = mr[0] if mr else ""
+    try:
+        txt = (mr or "").strip()
+    except Exception:
+        txt = ""
     if txt.upper() == "ALL":
         selected_cols = list(df.columns)
     else:

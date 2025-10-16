@@ -3,6 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from werkzeug.security import generate_password_hash
 
 from infra.auth_helpers import login_required, admin_required, get_current_user_id
+from services.qa_service import backfill_missing_embeddings
 
 # Repo functions (live in repo.py at project root)
 from repo import (
@@ -176,3 +177,17 @@ def remove_user_from_group(group_id: int):
     except Exception as e:
         flash(f"Fehler beim Entfernen: {e}", "danger")
     return redirect(url_for("admin.list_groups"))
+
+
+# -------------------- Embeddings Maintenance --------------------
+@bp.route("/embeddings/backfill", methods=["POST"])
+@login_required
+@admin_required
+def backfill_embeddings():
+    file_hash = request.form.get("file_hash") or None
+    try:
+        backfill_missing_embeddings(file_hash=file_hash)
+        flash("Backfill gestartet.", "success")
+    except Exception as e:
+        flash(f"Fehler beim Backfill: {e}", "danger")
+    return redirect(url_for("admin.list_users"))

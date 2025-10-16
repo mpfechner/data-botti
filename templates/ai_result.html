@@ -1,21 +1,39 @@
 {% extends "base.html" %}
-{% block title %}AI Result – DataBotti{% endblock %}
+{% block title %}KI-Ergebnis – DataBotti{% endblock %}
 
 {% block content %}
-<h1>AI Result für {{ filename }}</h1>
+<h1>KI-Ergebnis für {{ filename }}</h1>
 
-<h3>Deine Anfrage:</h3>
+<h3>Deine Eingabe:</h3>
 <div style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;border-radius:6px;margin-bottom:16px;min-height:2em;">
   {{ prompt }}
 </div>
 
-<h3>Antwort:</h3>
+<h3>Antwort der KI:</h3>
 <div style="white-space:pre-wrap;border:1px solid #ddd;padding:12px;border-radius:6px;background:#fafafa;min-height:2em;">
   {{ result }}
 </div>
+{% if decision %}
+<div style="margin-top:8px;">
+  {% if decision == 'exact' %}
+    <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#e8f4ff;border:1px solid #cfe7ff;">💾 aus Verlauf</span>
+  {% elif decision == 'analysis' %}
+    <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#e8fff0;border:1px solid #c7f0d8;">📊 Analyse</span>
+  {% elif decision == 'llm' or decision == 'semantic_or_llm' %}
+    <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#f6f0ff;border:1px solid #e5d9ff;">✨ neu generiert</span>
+  {% else %}
+    <span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#eef;border:1px solid #dde;">ℹ️ {{ decision }}</span>
+  {% endif %}
+</div>
+{% endif %}
 
 <div style="margin-top:16px;display:flex;gap:8px;">
   <a class="btn btn-primary" href="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}">Neue Anfrage</a>
-  <a class="btn" href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}">Zurück zur Analyse</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('datasets.analyze_dataset', dataset_id=dataset_id) }}">Zurück zur Analyse</a>
+  <form method="post" action="{{ url_for('assistant.ai_prompt', dataset_id=dataset_id) }}" style="display:inline;">
+    {{ csrf_field() }}
+    <input type="hidden" name="prompt" value="{{ prompt }}">
+    <button class="btn btn-outline-secondary" type="submit" title="Frage mit aktueller Logik neu berechnen">Neu berechnen</button>
+  </form>
 </div>
 {% endblock %}

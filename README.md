@@ -1,7 +1,7 @@
 # DataBotti
 
 DataBotti is a data analyzing tool with AI support.  
-Current status: **MVP / Work in Progress** – basic functions are available, AI functionality is integrated and extended with an AI Router for cost control. Next milestone: Block 1 – Q&A functionality.
+Current status: **Stable MVP** – all major functions are implemented and stable, including AI functionality with semantic search based on embeddings and cross-encoder re-ranking.
 
 ---
 
@@ -17,8 +17,9 @@ You can obtain an API key by creating an account at [OpenAI](https://openai.com/
 ## Features
 - 📊 Database connection (MariaDB via Docker or locally with SQL script)  
 - 🔍 Standard functions for data analysis  
-- 🤖 Integrated AI-supported analyses (OpenAI API)  
+- 🤖 Integrated AI-supported analyses with semantic search (embeddings and cross-encoder re-ranking)  
 - 🛡️ Logging and safety-focused prompt design  
+- 💾 Offline model caching and seed question management for QA  
 
 ---
 
@@ -72,13 +73,5 @@ Then you can start the backend locally in PyCharm while the database runs in the
 
 ---
 
-## Status & Roadmap
-- ✅ Basic functions running  
-- ✅ AI features integrated (OpenAI API)  
-- ✅ Logging with rotation in place  
-- ✅ Consent gating implemented (versioning, TTL-ready)  
-- ✅ AI Router implemented (cost-control threshold, model routing)  
-- ✅ Duplicate file handling with flash messages  
-- ✅ Refactored analyze route to service layer  
-- 🔄 Extension of AI functionality (robust stats, outlier detection, safety prompts)  
-- ⏳ Next milestone: Block 1 – Q&A functionality
+## Release
+- Version 1.12.0 – stable MVP with full AI semantic search, offline caching, and QA seed question management.

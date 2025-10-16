@@ -107,28 +107,13 @@ a:hover {
     margin-right: 0.25rem;
 }
 
-.header {
-    display: flex;
-    align-items: center;
-    padding: 10px;
-}
-
 .landing .header {
     justify-content: center;
     padding: 14px 10px;
     margin-bottom: 12px;
 }
 
-.logo-container img.logo {
-    height: 60px; /* Logo kleiner */
-    margin-right: 10px;
-}
-
 .landing .logo-container img.logo { height: 90px; }
-
-.logo-container img.logo-text {
-    height: 30px; /* Schriftzug anpassen */
-}
 
 .landing .logo-container img.logo-text { height: 42px; }
 
@@ -212,6 +197,15 @@ a:hover {
   border-color: #0073e6;
 }
 .btn-primary:hover { filter: brightness(0.95); }
+
+.btn-outline-secondary {
+  background: #fff;
+  color: #007bff;
+  border: 1px solid #007bff;
+}
+.btn-outline-secondary:hover {
+  background: #f0f8ff;
+}
 
 /* ==========================
    Flash messages (alerts)
@@ -400,4 +394,265 @@ a:hover {
   gap: 0.5rem;
   margin: 1rem 0;
   font-size: 0.95rem;
+}
+
+/* ==========================
+   Header & Navigation (consolidated)
+   ========================== */
+.header { display: flex; align-items: center; padding: 10px; gap: 1rem; flex-wrap: wrap; }
+
+.header .logo-container { display: flex; align-items: center; gap: 0.5rem; }
+
+/* Logo sizing */
+.header .logo-container img.logo { height: 60px; margin-right: 10px; }
+.header .logo-container img.logo-text { height: 30px; }
+
+/* Right area: buttons on one row, username below */
+.header .nav-area { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.header .nav-area .nav-buttons { display: flex; align-items: center; gap: 8px; }
+.header .nav-area .nav-buttons form { margin: 0; display: flex; align-items: center; }
+
+/* Use base .btn; unify sizing for header buttons */
+.header .nav-area .nav-buttons .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  line-height: 1;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+/* Normalize native button elements to match anchor .btn sizing */
+.header .nav-area .nav-buttons button.btn {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  border: 1px solid #ccc; /* match anchor buttons */
+  border-radius: 4px;
+  padding: 8px 12px;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.header .nav-area .nav-buttons a.btn { text-decoration: none; }
+
+/* Distinct logout look */
+.header .nav-area .nav-buttons .btn-logout { background: #15807a; color: #fff; border: 1px solid #15807a; }
+.header .nav-area .nav-buttons .btn-logout:hover { filter: brightness(0.95); }
+
+/* Username line under the buttons */
+.header .nav-area .user-info-line { font-size: 0.95rem; color: #2b445a; opacity: 0.9; white-space: nowrap; }
+
+/* Fallback: user info as direct flex item under header */
+.header > .user-info-line {
+  width: 100%;
+  text-align: right;
+}
+
+.loader {
+        transform: rotateZ(45deg);
+        perspective: 1000px;
+        border-radius: 50%;
+        width: 48px;
+        height: 48px;
+        color: #fff;
+      }
+        .loader:before,
+        .loader:after {
+          content: '';
+          display: block;
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: inherit;
+          height: inherit;
+          border-radius: 50%;
+          transform: rotateX(70deg);
+          animation: 1s spin linear infinite;
+        }
+        .loader:after {
+          color: #FF3D00;
+          transform: rotateY(70deg);
+          animation-delay: .4s;
+        }
+
+      @keyframes rotate {
+        0% {
+          transform: translate(-50%, -50%) rotateZ(0deg);
+        }
+        100% {
+          transform: translate(-50%, -50%) rotateZ(360deg);
+        }
+      }
+
+      @keyframes rotateccw {
+        0% {
+          transform: translate(-50%, -50%) rotate(0deg);
+        }
+        100% {
+          transform: translate(-50%, -50%) rotate(-360deg);
+        }
+      }
+
+      @keyframes spin {
+        0%,
+        100% {
+          box-shadow: .2em 0px 0 0px currentcolor;
+        }
+        12% {
+          box-shadow: .2em .2em 0 0 currentcolor;
+        }
+        25% {
+          box-shadow: 0 .2em 0 0px currentcolor;
+        }
+        37% {
+          box-shadow: -.2em .2em 0 0 currentcolor;
+        }
+        50% {
+          box-shadow: -.2em 0 0 0 currentcolor;
+        }
+        62% {
+          box-shadow: -.2em -.2em 0 0 currentcolor;
+        }
+        75% {
+          box-shadow: 0px -.2em 0 0 currentcolor;
+        }
+        87% {
+          box-shadow: .2em -.2em 0 0 currentcolor;
+        }
+      }
+
+/* ==========================
+   Admin (users/groups) styling
+   Moved from inline <style> in admin templates
+   ========================== */
+
+:root {
+  --db-teal: #0f9da4;
+  --db-teal-700: #0b7e84;
+  --db-bg: #f7f9fb;
+}
+
+/* Primary button in brand teal (global) */
+.btn-primary {
+  background-color: var(--db-teal);
+  border-color: var(--db-teal);
+  color: #fff;
+}
+.btn-primary:hover {
+  background-color: var(--db-teal-700);
+  border-color: var(--db-teal-700);
+  color: #fff;
+}
+
+/* Switch buttons (Benutzer / Gruppen) */
+.btn-switch .btn { margin-right: .5rem; border-radius: 999px; padding: .375rem 1rem; font-weight: 600; }
+.btn-db { background-color: var(--db-teal); border: 1px solid var(--db-teal); color: #fff; }
+.btn-db:hover { background-color: var(--db-teal-700); border-color: var(--db-teal-700); color: #fff; }
+.btn-db-outline { background-color: transparent; border: 1px solid var(--db-teal); color: var(--db-teal-700); }
+.btn-db-outline:hover { background-color: var(--db-teal); color: #fff; }
+
+.username-cell { text-align: center; }
+.username-text { font-weight: 500; margin-bottom: .25rem; }
+.card .table-responsive { width: 100%; overflow-x: auto; }
+.table { width: 100%; table-layout: fixed; }
+
+/* Cards & headings */
+.card { border: 1px solid #e8eef3; border-radius: 12px; background: #fff; padding: 1rem 1.25rem; margin: 1.25rem 0; overflow: hidden; }
+.card-title { font-size: 1.25rem; font-weight: 600; color: #0c2b33; margin-bottom: 1rem; }
+.muted { color: #7a8a97; }
+
+/* Two-column form for create-user */
+.form-grid { display: grid; grid-template-columns: 240px minmax(320px, 520px); column-gap: 16px; row-gap: 12px; align-items: center; }
+.form-grid .form-label { text-align: left; margin: 0; padding-left: .25rem; }
+.form-grid .form-check { margin: 0; }
+.form-grid .form-actions { grid-column: 1 / -1; margin-top: .75rem; }
+.form-grid .form-control { width: 100%; }
+
+/* Users table polish */
+.table thead th { background: #f1f6f7; font-weight: 600; border-bottom-color: #e1eaee; }
+.table thead th { white-space: nowrap; }
+.table th, .table td { padding: .625rem .75rem; vertical-align: middle; word-break: break-word; }
+.table tbody tr:hover { background: #fafcfd; }
+.table td:nth-child(1), .table th:nth-child(1) { width: 50px; color: #6b7a86; }
+.table td:nth-child(2), .table th:nth-child(2) { width: 200px; }
+.table td:nth-child(3), .table th:nth-child(3) { width: 160px; }
+.table td:nth-child(4), .table th:nth-child(4) { width: 80px; text-align: center; }
+.table td:nth-child(5), .table th:nth-child(5) { width: 220px; min-width: 200px; white-space: normal; }
+
+/* Action cell layout (right column) */
+.action-cell { display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-start; gap: .5rem; }
+.action-cell .inline-form { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin: 0; width: 100%; }
+.action-cell .inline-form input.form-control { width: 12rem; max-width: 100%; }
+
+/* Inline delete icon next to username */
+.name-delete-form { display: flex; justify-content: center; margin-top: .25rem; }
+.name-delete-btn { display: inline-flex; align-items: center; justify-content: center; padding: .125rem .45rem; line-height: 1; font-size: .9rem; border-radius: 999px; }
+
+/* Soft badges for Admin column */
+.badge-pill { display: inline-block; padding: .25rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+
+.badge-soft-success { background: #e6f6f4; color: var(--db-teal-700); border: 1px solid #cfecea; }
+.badge-soft-muted { background: #f2f5f7; color: #6b7a86; border: 1px solid #e2e8ee; }
+
+/* --- Unified form controls (inputs & selects) --- */
+.form-control, .form-select {
+  display: block;
+  width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  line-height: 1.4;
+  min-height: 2.5rem;
+  box-sizing: border-box;
+}
+
+.form-control:focus, .form-select:focus {
+  outline: none;
+  border-color: var(--db-teal);
+  box-shadow: 0 0 0 3px rgba(15,157,164,.15);
+}
+
+/* Compact select for tight table cells if needed */
+.table .form-select { min-height: 2.25rem; padding: .375rem .625rem; }
+
+/* ==========================
+   Result tables (pandas DataFrame in result.html)
+   ========================== */
+
+/* Make pandas tables readable and prevent column "merging" */
+ table.dataframe {
+  display: block;
+  width: max-content;      /* grow to content width */
+  min-width: 100%;         /* but never smaller than container */
+  border-collapse: collapse;
+  table-layout: auto;      /* let browser size columns by content */
+}
+
+ .df-wrap {
+  width: 100%;
+  overflow-x: auto;        /* horizontal scrollbar per table */
+ }
+
+ table.dataframe th,
+ table.dataframe td {
+  padding: .5rem .75rem;
+  border: 1px solid #ddd;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Ensure header text is horizontal and compact */
+ table.dataframe th { writing-mode: horizontal-tb; }
+
+/* Slightly tighter padding on very small screens */
+@media (max-width: 640px) {
+  table.dataframe th,
+  table.dataframe td { padding: .4rem .6rem; }
 }

@@ -18,3 +18,12 @@ def init_engine():
         future=True,
     )
     return engine
+
+_engine_instance = None
+
+def get_engine():
+    """Return cached SQLAlchemy engine or create if not yet initialized."""
+    global _engine_instance
+    if _engine_instance is None:
+        _engine_instance = init_engine()
+    return _engine_instance

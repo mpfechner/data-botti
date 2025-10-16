@@ -15,13 +15,14 @@ def login():
         engine = current_app.config.get("DB_ENGINE")
         with engine.connect() as conn:
             row = conn.execute(
-                text("SELECT id, password_hash, is_admin FROM users WHERE email = :email"),
+                text("SELECT id, username, password_hash, is_admin FROM users WHERE email = :email"),
                 {"email": email},
             ).fetchone()
 
-        if row and check_password_hash(row[1], password):
+        if row and check_password_hash(row[2], password):
             session['user_id'] = row[0]
-            session['is_admin'] = bool(row[2])
+            session['username'] = row[1]
+            session['is_admin'] = bool(row[3])
             # Clear any previous login-required flashes set by guards
             session.pop('_flashes', None)
             # Prefer ?next=... but also accept hidden form field if present

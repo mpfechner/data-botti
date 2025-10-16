@@ -1,16 +1,15 @@
+from services.qa_service import call_llm_and_record
 from flask import Blueprint, render_template, request, current_app, session, redirect, url_for
+from sqlalchemy import text
 from services.ai_client import ask_model, call_model
 from services.ai_router import choose_model
 from services.ai_tasks import build_relevant_columns_prompt
 from services.ai_tasks import build_system_prompt, select_relevant_columns, build_final_prompt
-from repo import get_latest_dataset_file
-from helpers import (
-    get_dataset_original_name,
-    build_dataset_context,
-    load_csv_resilient,
-    summarize_columns_for_selection,
-    build_cross_column_overview,
-)
+from repo import get_latest_dataset_file, get_dataset_original_name, build_dataset_context
+from services.csv_io import load_csv_resilient
+from services.data_summary import summarize_columns_for_selection, build_cross_column_overview
+from services.qa_service import make_query_request, save_qa
+from services.search_service import SearchService
 from datetime import datetime, timedelta, timezone
 import pandas as _pd
 
@@ -172,7 +171,6 @@ def ai_prompt(dataset_id):
                 if _cols >= 20 or _rows >= 100_000:
                     inferred = _bump(inferred)
 
-                expected_output = inferred
                 current_app.logger.info(
                     "Auto-inferred expected_output=%s (len=%s, rows=%s, cols=%s)", inferred, L, _rows, _cols
                 )
@@ -185,11 +183,17 @@ def ai_prompt(dataset_id):
 
         selection_prompt = build_relevant_columns_prompt(prompt, rows, cols, column_summaries)
         from services.ai_router import MODEL_FAST
-        selection_result = ask_model(selection_prompt, expected_output="short", context_id=f"{dataset_id}_colsel", model=MODEL_FAST)
+        selection_result = call_llm_and_record(selection_prompt, context_id=f"{dataset_id}_colsel", model=MODEL_FAST)
+
+        # Robustly normalize model output: ask_model may return either a string or (text, usage)
+        if isinstance(selection_result, tuple):
+            selection_text = selection_result[0] if selection_result else ""
+        else:
+            selection_text = selection_result or ""
 
         selected_cols = select_relevant_columns(
             df,
-            selection_result or "",
+            selection_text,
             task,
             rows,
             cols,
@@ -263,12 +267,12 @@ def ai_prompt(dataset_id):
             from services.ai_router import MODEL_SMART
             model = MODEL_SMART
             current_app.logger.info(
-                "AI model chosen (user-forced SMART): %s (expected_output=%s)", model, expected_output
+                "AI model chosen (user-forced SMART): %s (%s)", model, expected_output
             )
         else:
-            model = choose_model(expected_output=expected_output, cache_ratio=None)
+            model = choose_model(expected_output=expected_output, cache_ratio=None, prompt=prompt, context=context)
             current_app.logger.info(
-                "AI model chosen: %s (expected_output=%s)", model, expected_output
+                "AI model chosen: %s (%s)", model, expected_output
             )
         messages = [
             {"role": "system", "content": system_prompt},
@@ -283,16 +287,397 @@ def ai_prompt(dataset_id):
         max_tokens = _mt_map.get(_eo, 900)
         current_app.logger.info("Token budget: model=%s eo=%s max_tokens=%s", model, _eo, max_tokens)
 
-        result = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=0.2)
+        # Try to reuse an exact answer first (by normalized question hash per dataset/file)
+        # Resolve the REAL file_hash of the latest dataset file; only fall back to legacy "dataset-<id>" if not present.
+        real_file_hash = None
+        try:
+            # meta may be a RowMapping or dict; access safely
+            if isinstance(meta, dict):
+                real_file_hash = meta.get("file_hash")
+            else:
+                # RowMapping supports key lookup
+                real_file_hash = meta["file_hash"] if "file_hash" in meta.keys() else None
+        except Exception:
+            real_file_hash = None
+
+        if not real_file_hash:
+            # DB fallback: fetch latest file_hash for this dataset
+            try:
+                with engine.begin() as _conn_fh:
+                    _row_fh = _conn_fh.execute(
+                        text(
+                            """
+                            SELECT file_hash
+                            FROM dataset_files
+                            WHERE dataset_id = :dsid
+                            ORDER BY id DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"dsid": int(dataset_id)},
+                    ).mappings().first()
+                    if _row_fh:
+                        real_file_hash = _row_fh.get("file_hash")
+            except Exception:
+                current_app.logger.exception("Failed to resolve real file_hash for dataset_id=%s", dataset_id)
+                real_file_hash = None
+
+        if not real_file_hash:
+            # Last-resort legacy namespace to avoid breaking flow
+            real_file_hash = f"dataset-{dataset_id}"
+
+        # Build request with the resolved real hash
+        req = make_query_request(prompt, real_file_hash)
+        # Orchestrated search-only via SearchService (exact → analysis → semantic → none)
+        svc = SearchService()
+        rec = svc.search_orchestrated(req)
+        decision = getattr(req, "decision", None)
+        if decision in ("exact", "semantic") and rec is not None and getattr(rec, "answer", None):
+            current_app.logger.info("Reusing stored QA (decision=%s) id=%s for dataset_id=%s", decision, getattr(rec, 'id', None), dataset_id)
+            result_text = rec.answer
+            decision_badge = "exact"  # treat high-confidence semantic like exact for UX
+        elif decision == "analysis":
+            # Placeholder analysis rendering; later replaced by real analytics pipeline
+            result_text = (
+                "📊 Analyse-Modus (Platzhalter) – Deine Anfrage wurde als Analyse erkannt. "
+                "Diese Funktion liefert demnächst Tabellen/Diagramme direkt aus dem Dataset."
+            )
+            decision_badge = "analysis"
+        else:
+            # Fallback: LLM generation with the prepared two-stage prompt
+            current_app.logger.info(
+                "assistant.ai_prompt: saving new QA",
+                extra={
+                    "file_hash": real_file_hash,
+                    "q_hash": req.question_hash,
+                    "q_norm_head": (req.question_norm or "")[:80],
+                    "answer_head": (messages[-1]["content"][:80] if isinstance(messages, list) and messages and isinstance(messages[-1], dict) else ""),
+                },
+            )
+            result_text, usage = call_model(model=model, messages=messages, max_tokens=max_tokens, temperature=0.2)
+            decision_badge = "llm"
+            try:
+                qa_id = save_qa(
+                    file_hash=real_file_hash,
+                    question_original=req.question_raw,
+                    question_norm=req.question_norm,
+                    question_hash=req.question_hash,
+                    answer=result_text,
+                    meta={"source": "assistant.ai_prompt", "model": str(model)},
+                )
+                current_app.logger.info(
+                    "assistant.ai_prompt: saved QA",
+                    extra={
+                        "qa_id": qa_id,
+                        "dataset_id": dataset_id,
+                        "file_hash": real_file_hash,
+                        "q_hash": req.question_hash,
+                    },
+                )
+            except Exception:
+                current_app.logger.exception("Failed to save QA after LLM call")
+
         return render_template(
             "ai_result.html",
-            result=result,
+            result=result_text,
             filename=filename,
             dataset_id=dataset_id,
             prompt=prompt,
+            decision=decision_badge,
         )
 
     return render_template("ai_prompt.html", filename=filename, dataset_id=dataset_id, ai_consent=ai_consent)
+
+
+@assistant_bp.route("/search", methods=["GET"])
+def search_page():
+    """Render search page with a dropdown of recent datasets (id, name, optional file_hash)."""
+    engine = current_app.config.get("DB_ENGINE")
+    datasets = []
+    history = []
+    current_filename = None
+    try:
+        dataset_id = None
+        if engine is not None:
+            with engine.begin() as conn:
+                # resolve current user id
+                uid = None
+                try:
+                    from flask_login import current_user  # type: ignore
+                    if getattr(current_user, "is_authenticated", False):
+                        uid = int(getattr(current_user, "id"))
+                except Exception:
+                    pass
+                if uid is None:
+                    uid = session.get("user_id")
+                # fetch user's group ids
+                gids: list[int] = []
+                if uid is not None:
+                    try:
+                        g_rows = conn.execute(
+                            text("SELECT group_id FROM user_groups WHERE user_id = :uid"),
+                            {"uid": int(uid)},
+                        ).all()
+                        gids = [int(x[0]) for x in g_rows]
+                    except Exception:
+                        current_app.logger.exception("Failed to load user groups for /search")
+
+                if uid is None:
+                    # no user context → show nothing (empty list)
+                    rows = []
+                elif gids:
+                    # Build parameterized IN clause for group ids
+                    gid_params = {f"gid{i}": g for i, g in enumerate(gids)}
+                    in_clause = ",".join(f":{k}" for k in gid_params.keys())
+                    sql = text(
+                        f"""
+                        SELECT DISTINCT d.id, d.filename
+                        FROM datasets d
+                        LEFT JOIN datasets_groups dg ON dg.dataset_id = d.id
+                        WHERE d.user_id = :uid OR (dg.group_id IN ({in_clause}))
+                        ORDER BY d.upload_date DESC, d.id DESC
+                        LIMIT 100
+                        """
+                    )
+                    params = {"uid": int(uid), **gid_params}
+                    rows = conn.execute(sql, params).mappings().all()
+                else:
+                    # user has no groups → only own datasets
+                    rows = conn.execute(
+                        text(
+                            """
+                            SELECT d.id, d.filename
+                            FROM datasets d
+                            WHERE d.user_id = :uid
+                            ORDER BY d.upload_date DESC, d.id DESC
+                            LIMIT 100
+                            """
+                        ),
+                        {"uid": int(uid)},
+                    ).mappings().all()
+
+                for r in rows:
+                    ds_id = int(r.get("id"))
+                    ds_name = r.get("filename") or f"Dataset #{ds_id}"
+                    meta = get_latest_dataset_file(conn, ds_id)
+                    file_hash = None
+                    if meta:
+                        try:
+                            file_hash = meta.get("file_hash") if isinstance(meta, dict) else meta["file_hash"]
+                        except Exception:
+                            file_hash = None
+                    datasets.append({"id": ds_id, "name": ds_name, "file_hash": file_hash})
+
+                # Additional logic: get dataset_id from request.args and fetch history and filename
+                dataset_id = request.args.get("dataset_id", type=int)
+                # Optional timeframe filter for history: days = '7' | '30' | None (all)
+                days_param = request.args.get("days", type=str)
+                selected_days = days_param if days_param in ("7", "30") else None
+                if dataset_id:
+                    # Fetch last 5 questions for this dataset
+                    # First, get the file_hash for this dataset
+                    meta = get_latest_dataset_file(conn, dataset_id)
+                    file_hash = None
+                    if meta:
+                        try:
+                            file_hash = meta.get("file_hash") if isinstance(meta, dict) else meta["file_hash"]
+                        except Exception:
+                            file_hash = None
+
+                    # Always get filename from datasets table (dataset_files has no filename)
+                    row = conn.execute(
+                        text("SELECT filename FROM datasets WHERE id = :id"),
+                        {"id": dataset_id},
+                    ).mappings().first()
+                    current_filename = row.get("filename") if row else None
+                    # Legacy fallback hash used in earlier saves
+                    legacy_hash = f"dataset-{dataset_id}"
+                    # Build optional date filter
+                    date_clause = " AND created_at >= (NOW() - INTERVAL :days DAY)" if selected_days else ""
+
+                    # Build parameters depending on availability of real file_hash
+                    if file_hash:
+                        q_rows = conn.execute(
+                            text(
+                                f"""
+                                SELECT id, question_original, created_at
+                                FROM qa_pairs
+                                WHERE file_hash IN (:fh, :legacy){date_clause}
+                                ORDER BY created_at DESC
+                                LIMIT 5
+                                """
+                            ),
+                            ( {"fh": file_hash, "legacy": legacy_hash, "days": int(selected_days)} if selected_days else {"fh": file_hash, "legacy": legacy_hash} ),
+                        ).mappings().all()
+                    else:
+                        q_rows = conn.execute(
+                            text(
+                                f"""
+                                SELECT id, question_original, created_at
+                                FROM qa_pairs
+                                WHERE file_hash = :legacy{date_clause}
+                                ORDER BY created_at DESC
+                                LIMIT 5
+                                """
+                            ),
+                            ( {"legacy": legacy_hash, "days": int(selected_days)} if selected_days else {"legacy": legacy_hash} ),
+                        ).mappings().all()
+
+                    history = [
+                        {
+                            "id": q.get("id"),
+                            "question_original": q.get("question_original"),
+                            "created_at": q.get("created_at"),
+                        }
+                        for q in q_rows
+                    ]
+
+                    try:
+                        current_app.logger.info("/search history: dataset_id=%s file_hash=%s legacy=%s count=%s", dataset_id, file_hash, legacy_hash, len(history))
+                    except Exception:
+                        pass
+    except Exception:
+        current_app.logger.exception("Failed to load datasets for /search page")
+    return render_template(
+        "search.html",
+        datasets=datasets,
+        history=history,
+        current_filename=current_filename,
+        selected_dataset_id=dataset_id,
+        selected_days=selected_days or 'all',
+    )
+
+
+
+
+# === Show a stored QA directly (aus Verlauf), with access control ===
+@assistant_bp.route("/qa/<int:qa_id>", methods=["GET"])
+def show_qa(qa_id: int):
+    """Render a stored QA directly (💾 aus Verlauf), with access control (user/group).
+    Shows ai_result.html with decision='exact' and provides an option to re-run.
+    """
+    engine = current_app.config.get("DB_ENGINE")
+    if engine is None:
+        return render_template("ai_result.html", result="", prompt="", dataset_id=None, filename=None, decision="exact", error="DB engine not configured"), 500
+
+    with engine.begin() as conn:
+        # Load QA record
+        qa = conn.execute(
+            text(
+                """
+                SELECT id, file_hash, question_original, answer, created_at
+                FROM qa_pairs
+                WHERE id = :id
+                """
+            ),
+            {"id": int(qa_id)},
+        ).mappings().first()
+        if not qa:
+            return render_template("ai_result.html", result="", prompt="", dataset_id=None, filename=None, decision="exact", error="QA nicht gefunden."), 404
+
+        fh = qa.get("file_hash")
+        # Map file_hash → dataset (prefer the most recent file with this hash)
+        ds_row = conn.execute(
+            text(
+                """
+                SELECT d.id AS dataset_id, d.filename
+                FROM datasets d
+                JOIN dataset_files df ON df.dataset_id = d.id
+                WHERE df.file_hash = :fh
+                ORDER BY df.id DESC
+                LIMIT 1
+                """
+            ),
+            {"fh": fh},
+        ).mappings().first()
+
+        if not ds_row:
+            # Fallback: try to parse legacy "dataset-<id>" hashes
+            ds_id = None
+            if fh and str(fh).startswith("dataset-"):
+                try:
+                    ds_id = int(str(fh).split("-", 1)[1])
+                except Exception:
+                    ds_id = None
+            if ds_id is None:
+                return render_template("ai_result.html", result=qa.get("answer") or "", prompt=qa.get("question_original") or "", dataset_id=None, filename=None, decision="exact", error="Dataset zum QA nicht auffindbar."), 404
+            # Get filename for legacy path
+            row2 = conn.execute(
+                text("SELECT filename FROM datasets WHERE id = :id"),
+                {"id": ds_id},
+            ).mappings().first()
+            ds_row = {"dataset_id": ds_id, "filename": row2.get("filename") if row2 else None}
+
+        dataset_id = int(ds_row.get("dataset_id"))
+        filename = ds_row.get("filename")
+
+        # Access control: user must own dataset or be in a group that has access
+        uid = None
+        try:
+            from flask_login import current_user  # type: ignore
+            if getattr(current_user, "is_authenticated", False):
+                uid = int(getattr(current_user, "id"))
+        except Exception:
+            pass
+        if uid is None:
+            uid = session.get("user_id")
+
+        # If no user context, deny
+        if uid is None:
+            return render_template("ai_result.html", result="", prompt="", dataset_id=None, filename=None, decision="exact", error="Nicht angemeldet."), 403
+
+        # Check groups
+        gids: list[int] = []
+        try:
+            g_rows = conn.execute(
+                text("SELECT group_id FROM user_groups WHERE user_id = :uid"),
+                {"uid": int(uid)},
+            ).all()
+            gids = [int(x[0]) for x in g_rows]
+        except Exception:
+            current_app.logger.exception("Failed to load user groups for /qa/%s", qa_id)
+
+        # Verify access to dataset
+        if gids:
+            gid_params = {f"gid{i}": g for i, g in enumerate(gids)}
+            in_clause = ",".join(f":{k}" for k in gid_params)
+            access_row = conn.execute(
+                text(
+                    f"""
+                    SELECT 1
+                    FROM datasets d
+                    LEFT JOIN datasets_groups dg ON dg.dataset_id = d.id
+                    WHERE d.id = :dsid AND (d.user_id = :uid OR dg.group_id IN ({in_clause}))
+                    LIMIT 1
+                    """
+                ),
+                {"dsid": dataset_id, "uid": int(uid), **gid_params},
+            ).first()
+        else:
+            access_row = conn.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM datasets d
+                    WHERE d.id = :dsid AND d.user_id = :uid
+                    LIMIT 1
+                    """
+                ),
+                {"dsid": dataset_id, "uid": int(uid)},
+            ).first()
+
+        if not access_row:
+            return render_template("ai_result.html", result="", prompt="", dataset_id=None, filename=None, decision="exact", error="Kein Zugriff auf dieses Dataset."), 403
+
+        # Render stored QA, mark as exact (aus Verlauf)
+        return render_template(
+            "ai_result.html",
+            result=qa.get("answer") or "",
+            filename=filename,
+            dataset_id=dataset_id,
+            prompt=qa.get("question_original") or "",
+            decision="exact",
+        )
 
 
 @assistant_bp.route("/ai/revoke", methods=["POST"])

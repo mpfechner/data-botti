@@ -1,54 +1,53 @@
 {% extends "base.html" %}
-{% block title %}Admin · Users{% endblock %}
+{% block title %}Admin · Benutzer{% endblock %}
 
 {% block content %}
 <div class="container">
 
-  <h1 class="page-title">Admin · Users</h1>
-  <div class="button-group">
-    <a class="btn btn-primary" href="{{ url_for('admin.list_users') }}">Users</a>
-    <a class="btn btn-secondary" href="{{ url_for('admin.list_groups') }}">Groups</a>
+  <h1 class="page-title">Admin · Benutzer</h1>
+  <div class="btn-switch mb-3">
+    <a class="btn btn-db" href="{{ url_for('admin.list_users') }}">Benutzer</a>
+    <a class="btn btn-db-outline" href="{{ url_for('admin.list_groups') }}">Gruppen</a>
   </div>
 
   <section class="card">
-    <h2 class="card-title">Create User</h2>
-    <form method="post" action="{{ url_for('admin.create_user') }}" class="form form-horizontal">
+    <h2 class="card-title">Benutzer erstellen</h2>
+    <form method="post" action="{{ url_for('admin.create_user') }}" class="form">
       {{ csrf_field() }}
-      <div class="form-row">
-        <label for="email">E-Mail</label>
-        <input id="email" name="email" type="email" required>
-      </div>
-      <div class="form-row">
-        <label for="username">Username</label>
-        <input id="username" name="username" type="text" placeholder="optional">
-      </div>
-      <div class="form-row">
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password" required>
-      </div>
-      <div class="form-row">
-        <label class="checkbox">
-          <input type="checkbox" name="is_admin" value="1">
-          <span>Admin</span>
-        </label>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" type="submit">Create</button>
+      <div class="form-grid">
+        <label for="email" class="form-label">E-Mail</label>
+        <input id="email" name="email" type="email" class="form-control" required>
+
+        <label for="username" class="form-label">Benutzername <small class="text-muted">(optional)</small></label>
+        <input id="username" name="username" type="text" class="form-control" placeholder="optional">
+
+        <label for="password" class="form-label">Passwort</label>
+        <input id="password" name="password" type="password" class="form-control" required>
+
+        <div></div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="is_admin" name="is_admin" value="1">
+          <label class="form-check-label" for="is_admin">Admin</label>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Erstellen</button>
+        </div>
       </div>
     </form>
   </section>
 
   <section class="card">
-    <h2 class="card-title">All Users</h2>
-    <div class="table-wrapper">
-      <table class="table">
+    <h2 class="card-title">Alle Benutzer</h2>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
         <thead>
           <tr>
             <th>ID</th>
             <th>E-Mail</th>
-            <th>Username</th>
+            <th>Benutzername</th>
             <th>Admin</th>
-            <th class="col-actions">Actions</th>
+            <th>Passwort</th>
           </tr>
         </thead>
         <tbody>
@@ -56,28 +55,49 @@
           <tr>
             <td>{{ u.id }}</td>
             <td>{{ u.email }}</td>
-            <td>{{ u.username or "—" }}</td>
-            <td>{% if u.is_admin %}✓{% else %}—{% endif %}</td>
-            <td class="actions">
+            <td class="username-cell">
+              <div class="username-text">{{ u.username or "—" }}</div>
+              <form method="post" action="{{ url_for('admin.delete_user', user_id=u.id) }}" class="inline-form name-delete-form" onsubmit="return confirm('Diesen Nutzer wirklich löschen?');">
+                {{ csrf_field() }}
+                <button class="btn btn-danger btn-sm name-delete-btn" type="submit" title="Benutzer löschen" aria-label="Benutzer löschen">⛔️</button>
+              </form>
+            </td>
+            <td>
+              {% if u.is_admin %}
+                <span class="badge-pill badge-soft-success">Admin</span>
+              {% else %}
+                <span class="badge-pill badge-soft-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="action-cell">
               <form method="post" action="{{ url_for('admin.change_password', user_id=u.id) }}" class="inline-form">
                 {{ csrf_field() }}
-                <input name="password" type="password" placeholder="new password" required>
-                <button class="btn btn-secondary" type="submit">Set Password</button>
-              </form>
-              <form method="post" action="{{ url_for('admin.delete_user', user_id=u.id) }}" class="inline-form" onsubmit="return confirm('Diesen Nutzer wirklich löschen?');">
-                {{ csrf_field() }}
-                <button class="btn btn-danger" type="submit">Delete</button>
+                <input name="password" type="password" class="form-control d-inline-block" style="width: 14rem;" placeholder="neues Passwort" required>
+                <button class="btn btn-secondary" type="submit" title="Passwort setzen" aria-label="Passwort setzen">☑️</button>
               </form>
             </td>
           </tr>
           {% else %}
           <tr>
-            <td colspan="5" class="muted">No users found.</td>
+            <td colspan="5" class="muted text-center">Keine Benutzer gefunden.</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+</section>
+  <section class="card">
+    <h2 class="card-title">Embeddings nachtragen</h2>
+    <form method="post" action="{{ url_for('admin.backfill_embeddings') }}" class="form">
+      {{ csrf_field() }}
+      <div class="form-row">
+        <label for="file_hash" class="form-label">File Hash <small class="text-muted">(optional)</small></label>
+        <input id="file_hash" name="file_hash" type="text" class="form-control" placeholder="leer lassen für alle Dateien">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-warning" type="submit">Nachtrag starten</button>
+      </div>
+    </form>
   </section>
 </div>
 {% endblock %}
